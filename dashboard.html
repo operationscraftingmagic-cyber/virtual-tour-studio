@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Virtual Tour Studio - Dashboard</title>
 
-  <!-- Firebase SDKs (Free Firestore Database) -->
+  <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
@@ -229,20 +229,18 @@
 
   <script>
     // =========================================================================
-    // FIREBASE CONFIGURATION (Paste your actual Firebase keys here)
+    // FIREBASE INITIALIZATION & CONFIGURATION
     // =========================================================================
-    // For Firebase JS SDK v7.20.0 and later, measurementId is optional
-  const firebaseConfig = {
-    apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
-    authDomain: "virtualtour-54c99.firebaseapp.com",
-    projectId: "virtualtour-54c99",
-    storageBucket: "virtualtour-54c99.firebasestorage.app",
-    messagingSenderId: "52412538071",
-    appId: "1:52412538071:web:eb9799ac8ebac146cbe492",
-    measurementId: "G-PG5TE98PGB"
-  };
+    const firebaseConfig = {
+      apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
+      authDomain: "virtualtour-54c99.firebaseapp.com",
+      projectId: "virtualtour-54c99",
+      storageBucket: "virtualtour-54c99.firebasestorage.app",
+      messagingSenderId: "52412538071",
+      appId: "1:52412538071:web:eb9799ac8ebac146cbe492",
+      measurementId: "G-PG5TE98PGB"
+    };
 
-    // Helper to check for missing API keys
     function isFirebaseConfigured() {
       return firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" && 
              firebaseConfig.projectId !== "YOUR_PROJECT_ID";
@@ -252,6 +250,11 @@
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
+
+    // Force Long-Polling to eliminate WebSocket/gRPC 10s connection delays
+    db.settings({ 
+      experimentalForceLongPolling: true 
+    });
 
     // =========================================================================
     // FETCH & RENDER ALL PROJECTS
@@ -272,7 +275,13 @@
       }
 
       try {
-        const snapshot = await db.collection('projects').get();
+        let snapshot;
+        try {
+          snapshot = await db.collection('projects').get();
+        } catch (netErr) {
+          console.warn("Network request failed, attempting offline cache...", netErr);
+          snapshot = await db.collection('projects').get({ source: 'cache' });
+        }
 
         if (snapshot.empty) {
           grid.innerHTML = `
@@ -288,10 +297,11 @@
         grid.innerHTML = ''; // Clear loading state
 
         snapshot.forEach((doc) => {
-          const projectData = doc.data();
+          const projectData = doc.data() || {};
           const projectId = doc.id;
+          const encodedProjectId = encodeURIComponent(projectId);
           const scenesCount = projectData.scenes ? Object.keys(projectData.scenes).length : 0;
-          const startRoom = projectData.initialScene || "Not set";
+          const startRoom = projectData.initialScene ? projectData.initialScene.replace(/_/g, ' ') : "Not set";
 
           const card = document.createElement('div');
           card.className = 'project-card';
@@ -307,11 +317,11 @@
             </div>
 
             <div class="card-actions">
-              <button onclick="window.location.href='editor.html?project=${projectId}'">
+              <button onclick="window.location.href='editor.html?project=${encodedProjectId}'">
                 ✏️ Edit Tour
               </button>
               <div class="card-actions-row">
-                <button class="secondary" onclick="window.location.href='view_project.html?project=${projectId}'">
+                <button class="secondary" onclick="window.location.href='view_project.html?project=${encodedProjectId}'">
                   👁️ Preview
                 </button>
                 <button class="secondary" onclick="copyShareLink('${projectId}')">
@@ -367,7 +377,7 @@
         return;
       }
 
-      // Convert spaces and special characters to clean ID string
+      // Format title into clean ID slug
       const cleanProjectId = rawName.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
 
       createBtn.disabled = true;
@@ -376,14 +386,13 @@
       try {
         const docRef = db.collection('projects').doc(cleanProjectId);
 
-        // Safe merge write prevents offline blocking errors
         await docRef.set({
           initialScene: "",
           scenes: {}
         }, { merge: true });
 
-        // Redirect directly to editor
-        window.location.href = `editor.html?project=${cleanProjectId}`;
+        // Redirect directly to editor with safe parameter
+        window.location.href = `editor.html?project=${encodeURIComponent(cleanProjectId)}`;
 
       } catch (error) {
         console.error("Error creating project:", error);
@@ -398,18 +407,24 @@
     // SHARE & DELETE ACTIONS
     // =========================================================================
     function copyShareLink(projectId) {
-      const baseUrl = window.location.href.substring(0, window.location.href.lastIndexOf('/'));
-      const shareUrl = `${baseUrl}/view_project.html?project=${projectId}`;
+      const pathParts = window.location.pathname.split('/');
+      pathParts.pop(); 
+      const folderPath = pathParts.join('/');
+      const shareUrl = `${window.location.origin}${folderPath}/view_project.html?project=${encodeURIComponent(projectId)}`;
       
-      navigator.clipboard.writeText(shareUrl).then(() => {
-        alert("Client view link copied to clipboard!\n\n" + shareUrl);
-      }).catch(() => {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(shareUrl).then(() => {
+          alert("Client preview link copied to clipboard!\n\n" + shareUrl);
+        }).catch(() => {
+          prompt("Copy this client link:", shareUrl);
+        });
+      } else {
         prompt("Copy this client link:", shareUrl);
-      });
+      }
     }
 
     async function deleteProject(projectId) {
-      if (!confirm(`Are you sure you want to permanently delete project "${projectId}"? This cannot be undone.`)) {
+      if (!confirm(`Are you sure you want to permanently delete project "${projectId}"? This action cannot be undone.`)) {
         return;
       }
 
