@@ -213,18 +213,17 @@
     }
 
     /* Panolens Hover Tooltip Glow Style */
-  .panolens-infospot-tooltip {
-    background: rgba(18, 18, 18, 0.9) !important;
-    border: 1px solid #00e676 !important;
-    box-shadow: 0 0 15px rgba(0, 230, 118, 0.4), inset 0 0 10px rgba(41, 121, 255, 0.2) !important;
-    color: #ffffff !important;
-    font-weight: 600 !important;
-    border-radius: 20px !important;
-    padding: 6px 14px !important;
-    letter-spacing: 0.5px !important;
-    backdrop-filter: blur(8px) !important;
-  }
-    
+    .panolens-infospot-tooltip {
+      background: rgba(18, 18, 18, 0.9) !important;
+      border: 1px solid #00e676 !important;
+      box-shadow: 0 0 15px rgba(0, 230, 118, 0.4), inset 0 0 10px rgba(41, 121, 255, 0.2) !important;
+      color: #ffffff !important;
+      font-weight: 600 !important;
+      border-radius: 20px !important;
+      padding: 6px 14px !important;
+      letter-spacing: 0.5px !important;
+      backdrop-filter: blur(8px) !important;
+    }
   </style>
 </head>
 <body>
@@ -314,61 +313,51 @@
     const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
     const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
 
-// =========================================================================
-// GLOWING HOTSPOT ICON (Aaron Iker Style Glow Effect)
-// =========================================================================
-const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
-    <defs>
-      <!-- Multi-layer Neon Glow Filter -->
-      <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
-        <feGaussianBlur stdDeviation="4" result="blur1" />
-        <feGaussianBlur stdDeviation="10" result="blur2" />
-        <feMerge>
-          <feMergeNode in="blur2" />
-          <feMergeNode in="blur1" />
-          <feMergeNode in="SourceGraphic" />
-        </feMerge>
-      </filter>
+    // =========================================================================
+    // GLOWING HOTSPOT ICON (Expanded Bounds & High-Luminance WebGL Glow)
+    // =========================================================================
+    const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+        <defs>
+          <!-- Wide-spread Neon Blur Filter -->
+          <filter id="neon-glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="6" result="blur1" />
+            <feGaussianBlur stdDeviation="16" result="blur2" />
+            <feMerge>
+              <feMergeNode in="blur2" />
+              <feMergeNode in="blur1" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
 
-      <!-- Gradient Border -->
-      <linearGradient id="glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-        <stop offset="0%" stop-color="#00e676" />
-        <stop offset="50%" stop-color="#2979ff" />
-        <stop offset="100%" stop-color="#00e676" />
-      </linearGradient>
-    </defs>
+          <!-- High-Contrast Neon Gradient -->
+          <linearGradient id="glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#00e676" />
+            <stop offset="50%" stop-color="#2979ff" />
+            <stop offset="100%" stop-color="#00e676" />
+          </linearGradient>
 
-    <style>
-      @keyframes pulseRing {
-        0% { transform: scale(0.88); opacity: 0.5; }
-        50% { transform: scale(1.08); opacity: 1; }
-        100% { transform: scale(0.88); opacity: 0.5; }
-      }
-      @keyframes floatArrow {
-        0%, 100% { transform: translateY(0px); }
-        50% { transform: translateY(-3px); }
-      }
-      .pulse-ring {
-        transform-origin: center;
-        animation: pulseRing 2s infinite ease-in-out;
-      }
-      .arrow-icon {
-        transform-origin: center;
-        animation: floatArrow 1.5s infinite ease-in-out;
-      }
-    </style>
+          <!-- Radial Background Glow Aura -->
+          <radialGradient id="aura-glow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#00e676" stop-opacity="0.6" />
+            <stop offset="60%" stop-color="#2979ff" stop-opacity="0.2" />
+            <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+          </radialGradient>
+        </defs>
 
-    <!-- Outer Animated Glow Aura -->
-    <circle class="pulse-ring" cx="64" cy="64" r="46" fill="none" stroke="url(#glow-grad)" stroke-width="5" filter="url(#neon-glow)" />
+        <!-- Outer Radiant Glow Disk -->
+        <circle cx="128" cy="128" r="90" fill="url(#aura-glow)" />
 
-    <!-- Dark Glassmorphism Inner Button Core -->
-    <circle cx="64" cy="64" r="38" fill="rgba(18, 18, 18, 0.85)" stroke="url(#glow-grad)" stroke-width="3" filter="url(#neon-glow)" />
+        <!-- Neon Glow Outer Ring -->
+        <circle cx="128" cy="128" r="54" fill="none" stroke="url(#glow-grad)" stroke-width="8" filter="url(#neon-glow)" />
 
-    <!-- Directional Portal Arrow -->
-    <path class="arrow-icon" d="M64 42 L80 64 L70 64 L70 82 L58 82 L58 64 L48 64 Z" fill="#00e676" filter="url(#neon-glow)" />
-  </svg>
-`);
+        <!-- Inner Dark Glass Core -->
+        <circle cx="128" cy="128" r="44" fill="rgba(12, 12, 12, 0.92)" stroke="#00e676" stroke-width="3" filter="url(#neon-glow)" />
+
+        <!-- Bright Core Arrow -->
+        <path d="M128 92 L150 122 L138 122 L138 152 L118 152 L118 122 L106 122 Z" fill="#00e676" filter="url(#neon-glow)" />
+      </svg>
+    `);
 
     const firebaseConfig = {
       apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
@@ -613,7 +602,6 @@ const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
       alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
-    // FIX 1: Save View Angle functionality
     function captureDefaultViewpoint() {
       if (!viewer || !activeSceneKey || !activeProjectData.scenes[activeSceneKey]) {
         alert("Please select an active room scene first.");
@@ -702,7 +690,6 @@ const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
       renderActivePano();
     }
 
-    // FIX 2: Draw Hotspots using HOTSPOT_CUSTOM_ICON
     function drawHotspotsToWorkspace() {
       if (!currentPanoObj) return;
 
