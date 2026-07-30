@@ -1,195 +1,377 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>360° Virtual Tour Player</title>
-    <style>
-        html, body {
-            margin: 0; padding: 0; width: 100%; height: 100%;
-            overflow: hidden; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: #000;
-        }
-        #viewer-container {
-            width: 100%; height: 100%; position: absolute; top: 0; left: 0;
-        }
-        #tour-overlay-ui {
-            position: absolute; top: 20px; left: 20px; z-index: 10;
-            pointer-events: none; display: flex; flex-direction: column; gap: 5px;
-        }
-        .project-badge {
-            background: rgba(0, 0, 0, 0.75); color: #00bcd4; padding: 10px 18px;
-            border-radius: 30px; font-weight: bold; font-size: 16px;
-            letter-spacing: 0.5px; border: 1px solid rgba(0, 188, 212, 0.3);
-            backdrop-filter: blur(4px); box-shadow: 0 4px 15px rgba(0,0,0,0.5);
-            pointer-events: auto; width: fit-content;
-        }
-        .room-badge {
-            background: rgba(0, 0, 0, 0.6); color: #fff; padding: 6px 14px;
-            border-radius: 20px; font-size: 12px; font-weight: 600;
-            border: 1px solid rgba(255, 255, 255, 0.15); width: fit-content;
-            text-transform: uppercase; letter-spacing: 1px;
-        }
-        #loading-overlay {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            background: #111; display: flex; flex-direction: column;
-            justify-content: center; align-items: center; z-index: 100;
-            transition: opacity 0.5s ease; color: #fff; gap: 15px;
-        }
-        .spinner {
-            width: 40px; height: 40px; border: 4px solid rgba(255,255,255,0.1);
-            border-top-color: #00bcd4; border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>360° Virtual Tour Viewer</title>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r105/three.min.js"></script>
-    <script>window.process = { env: { NODE_ENV: 'production' } };</script>
-    <script src="https://cdn.jsdelivr.net/npm/panolens@0.12.1/build/panolens.min.js"></script>
+  <!-- Node.js 'process' Polyfill for Browser Compatibility -->
+  <script>
+    window.process = { env: { NODE_ENV: 'production' } };
+  </script>
 
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <!-- Core Libraries -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r105/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/panolens@0.12.1/build/panolens.min.js"></script>
+
+  <!-- Firebase SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #000;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #fff;
+    }
+    #viewer-container {
+      width: 100vw;
+      height: 100vh;
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 1;
+    }
+    #viewer-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+      outline: none;
+    }
+
+    /* Floating Navigation Controls */
+    .overlay-ui {
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      background: rgba(18, 18, 18, 0.75);
+      backdrop-filter: blur(8px);
+      padding: 10px 16px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    }
+    .overlay-ui label {
+      font-size: 0.85rem;
+      color: #bbb;
+      font-weight: 500;
+    }
+    .overlay-ui select {
+      background-color: #1a1a1a;
+      border: 1px solid #444;
+      color: #00e676;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 0.9rem;
+      font-weight: 600;
+      cursor: pointer;
+      outline: none;
+    }
+
+    .top-right-actions {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      z-index: 10;
+      display: flex;
+      gap: 10px;
+    }
+    .action-btn {
+      background: rgba(18, 18, 18, 0.75);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      color: #fff;
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .action-btn:hover {
+      background: rgba(40, 40, 40, 0.9);
+      border-color: #00e676;
+    }
+
+    /* Loading Screen Overlay */
+    #loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: #0d0d0d;
+      color: #00e676;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      z-index: 100;
+      transition: opacity 0.4s ease;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(0, 230, 118, 0.2);
+      border-top-color: #00e676;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
 </head>
 <body>
 
-    <div id="loading-overlay">
-        <div class="spinner"></div>
-        <div id="loading-text" style="font-size: 14px; letter-spacing: 1px; color: #aaa;">Streaming Virtual Assets...</div>
-    </div>
+  <!-- Loading State -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <span id="loading-text">Connecting to Virtual Tour...</span>
+  </div>
 
-    <div id="tour-overlay-ui">
-        <div id="ui-project-name" class="project-badge">Loading Tour...</div>
-        <div id="ui-room-name" class="room-badge">Locating Coordinates</div>
-    </div>
+  <!-- Top Navigation UI -->
+  <div class="overlay-ui">
+    <label for="room-selector">Current Location:</label>
+    <select id="room-selector"></select>
+  </div>
 
-    <div id="viewer-container"></div>
+  <div class="top-right-actions">
+    <button class="action-btn" id="edit-mode-btn">Open Editor</button>
+    <button class="action-btn" id="fullscreen-btn">Fullscreen</button>
+  </div>
 
-    <script>
-        // Exact matching sync configuration credentials
-        const firebaseConfig = {
-            apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
-            authDomain: "virtualtour-54c99.firebaseapp.com",
-            projectId: "virtualtour-54c99",
-            storageBucket: "virtualtour-54c99.firebasestorage.app",
-            messagingSenderId: "52412538071",
-            appId: "1:52412538071:web:eb9799ac8ebac146cbe492",
-            measurementId: "G-PG5TE98PGB"
-        };
+  <!-- Panolens Viewer Container -->
+  <div id="viewer-container"></div>
 
-        firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+  <script>
+    // =========================================================================
+    // FIREBASE INITIALIZATION & CONFIGURATION
+    // =========================================================================
+    const firebaseConfig = {
+      apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
+      authDomain: "virtualtour-54c99.firebaseapp.com",
+      projectId: "virtualtour-54c99",
+      storageBucket: "virtualtour-54c99.firebasestorage.app",
+      messagingSenderId: "52412538071",
+      appId: "1:52412538071:web:eb9799ac8ebac146cbe492"
+    };
 
-        const container = document.querySelector('#viewer-container');
-        let projectId = new URLSearchParams(window.location.search).get('id');
-        
-        let viewer = null;
-        let tourPanoramas = {};
+    if (!firebase.apps.length) {
+      firebase.initializeApp(firebaseConfig);
+    }
+    const db = firebase.firestore();
 
-        if (!projectId) {
-            document.getElementById('loading-text').textContent = "Error: Missing configuration payload ticket.";
-            alert("No project selected to preview! Redirecting.");
-            window.location.href = 'dashboard.html';
+    // Force Long-Polling to bypass WebSocket/gRPC 10s backend connection timeouts
+    db.settings({ 
+      experimentalForceLongPolling: true 
+    });
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const projectId = urlParams.get('project') || 'demo_tour';
+
+    let activeProjectData = {
+      initialScene: "",
+      scenes: {}
+    };
+
+    let viewer = null;
+    let activeSceneKey = "";
+    const panoCache = {};
+
+    // =========================================================================
+    // INITIALIZATION
+    // =========================================================================
+    window.addEventListener('DOMContentLoaded', async () => {
+      const container = document.getElementById('viewer-container');
+
+      viewer = new PANOLENS.Viewer({
+        container: container,
+        autoHideInfospot: false,
+        controlBar: true,
+        output: 'console'
+      });
+
+      window.addEventListener('resize', () => {
+        if (viewer) viewer.onWindowResize();
+      });
+
+      // UI Control Bindings
+      document.getElementById('room-selector').addEventListener('change', (e) => switchActiveRoom(e.target.value));
+      document.getElementById('edit-mode-btn').addEventListener('click', () => {
+        window.location.href = `editor.html?project=${projectId}`;
+      });
+      document.getElementById('fullscreen-btn').addEventListener('click', toggleFullscreen);
+
+      await loadProjectFromCloud();
+    });
+
+    // =========================================================================
+    // HELPER: PRELOAD PANORAMA IMAGE (Prevents WebGL texImage2D error)
+    // =========================================================================
+    function preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Image failed to load or cross-origin policy blocked access."));
+        img.src = url;
+      });
+    }
+
+    function showLoadingOverlay(msg) {
+      const el = document.getElementById('loading-overlay');
+      document.getElementById('loading-text').innerText = msg || "Loading...";
+      el.style.display = 'flex';
+      el.style.opacity = '1';
+    }
+
+    function hideLoadingOverlay() {
+      const el = document.getElementById('loading-overlay');
+      el.style.opacity = '0';
+      setTimeout(() => { el.style.display = 'none'; }, 400);
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => alert(`Fullscreen error: ${err.message}`));
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    }
+
+    // =========================================================================
+    // FIRESTORE DATA LOADER WITH OFFLINE FALLBACK
+    // =========================================================================
+    async function loadProjectFromCloud() {
+      try {
+        showLoadingOverlay("Fetching tour package...");
+        const docRef = db.collection('projects').doc(projectId);
+
+        let docSnap;
+        try {
+          docSnap = await docRef.get();
+        } catch (netErr) {
+          console.warn("Live network request failed. Attempting offline cache...", netErr);
+          try {
+            docSnap = await docRef.get({ source: 'cache' });
+          } catch (cacheErr) {
+            throw new Error("Could not reach Firestore backend and no offline cache exists.");
+          }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            // Instantiate presentation runtime engine layout structures
-            viewer = new PANOLENS.Viewer({ 
-                container: container, 
-                autoHideInfospot: false, // 👈 This locks them into permanent visibility
-                controlBar: true,
-                cameraFov: 80
-            });
+        if (docSnap && docSnap.exists) {
+          activeProjectData = docSnap.data();
+          populateRoomSelector();
 
-            loadTourFromCloud();
-        });
-
-        function loadTourFromCloud() {
-            db.collection("vrtours").doc(projectId).get().then((doc) => {
-                if (!doc.exists) {
-                    document.getElementById('loading-text').textContent = "Error: Project not found.";
-                    alert("The requested virtual tour database entry does not exist.");
-                    return;
-                }
-
-                const projectData = doc.data();
-                document.getElementById('ui-project-name').textContent = projectData.name || "360° EXPERIENCE";
-
-                const scenes = projectData.scenes || {};
-                const sceneKeys = Object.keys(scenes);
-
-                if (sceneKeys.length === 0) {
-                    document.getElementById('loading-text').textContent = "No Scenes configured inside this template.";
-                    return;
-                }
-
-                // Compile and generate all scene instances dynamically out of incoming schemas
-                sceneKeys.forEach(key => {
-                    const sceneData = scenes[key];
-                    const pano = new PANOLENS.ImagePanorama(sceneData.image);
-
-                    // --- NEW CRITICAL FEATURE: Default Camera Target Vector Orientation Alignment Injection ---
-                    if (sceneData.initialLook) {
-                        pano.addEventListener('enter-fade-start', function() {
-                            viewer.tweenControlCenter(
-                                new THREE.Vector3(sceneData.initialLook.x, sceneData.initialLook.y, sceneData.initialLook.z), 
-                                0 // Snap instantly with zero millisecond delay on entry transitions
-                            );
-                        });
-                    }
-
-                    // Dynamically update UI Badge details upon viewport swaps
-                    pano.addEventListener('enter-done', function() {
-                        document.getElementById('ui-room-name').textContent = `Current Area: ${key.replace(/_/g, ' ')}`;
-                    });
-
-                    tourPanoramas[key] = pano;
-                    viewer.add(pano);
-                });
-
-                // Run a second configuration pass to link hotspots between compilation layers
-                sceneKeys.forEach(key => {
-                    const sceneData = scenes[key];
-                    const activePano = tourPanoramas[key];
-                    const hotspots = sceneData.hotspots || [];
-
-                    hotspots.forEach(h => {
-                        // Check if the target room still exists before drawing the arrow link
-                        if (tourPanoramas[h.target]) {
-                            const arrow = new PANOLENS.Infospot(280, PANOLENS.DataImage.Arrow);
-                            arrow.position.set(h.x, h.y, h.z);
-                            arrow.addHoverText(`Move to: ${h.target.replace(/_/g, ' ').toUpperCase()}`);
-                            
-                            // Navigation click transition callback handler
-                            arrow.addEventListener('click', function() {
-                                viewer.setPanorama(tourPanoramas[h.target]);
-                            });
-
-                            activePano.add(arrow);
-                        }
-                    });
-                });
-
-                // Establish baseline environment entry points
-                const startingSceneKey = projectData.initialScene || sceneKeys[0];
-                
-                if (tourPanoramas[startingSceneKey]) {
-                    viewer.setPanorama(tourPanoramas[startingSceneKey]);
-                }
-
-                // Wipe out loading masks instantly as graphic layers load smoothly
-                setTimeout(() => {
-                    const loader = document.getElementById('loading-overlay');
-                    loader.style.opacity = '0';
-                    setTimeout(() => loader.style.display = 'none', 500);
-                }, 600);
-
-            }).catch(err => {
-                console.error(err);
-                document.getElementById('loading-text').textContent = "Cloud connection breakdown exception.";
-                alert("Error pulling live environment elements down: " + err);
-            });
+          if (activeProjectData.initialScene && activeProjectData.scenes[activeProjectData.initialScene]) {
+            await switchActiveRoom(activeProjectData.initialScene);
+          } else if (Object.keys(activeProjectData.scenes).length > 0) {
+            await switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
+          } else {
+            hideLoadingOverlay();
+            alert("This virtual tour does not contain any room scenes yet.");
+          }
+        } else {
+          hideLoadingOverlay();
+          alert(`No virtual tour found matching ID "${projectId}".`);
         }
-    </script>
+      } catch (err) {
+        console.error("Firestore fetch error:", err);
+        hideLoadingOverlay();
+        alert("Database Connection Warning:\n\n" + err.message);
+      }
+    }
+
+    function populateRoomSelector() {
+      const selector = document.getElementById('room-selector');
+      selector.innerHTML = '';
+
+      const keys = Object.keys(activeProjectData.scenes);
+      keys.forEach(key => {
+        const option = document.createElement('option');
+        option.value = key;
+        option.textContent = key.replace(/_/g, ' ').toUpperCase();
+        selector.appendChild(option);
+      });
+    }
+
+    // =========================================================================
+    // PANORAMA SWITCHING & HOTSPOT RENDERING
+    // =========================================================================
+    async function switchActiveRoom(roomKey) {
+      if (!activeProjectData.scenes[roomKey]) return;
+
+      activeSceneKey = roomKey;
+      document.getElementById('room-selector').value = roomKey;
+
+      const sceneData = activeProjectData.scenes[roomKey];
+      showLoadingOverlay(`Entering ${roomKey.replace(/_/g, ' ')}...`);
+
+      try {
+        if (!panoCache[roomKey]) {
+          const loadedImg = await preloadImage(sceneData.image);
+          const newPano = new PANOLENS.ImagePanorama(loadedImg.src);
+
+          // Build portals/hotspots for this room
+          if (sceneData.hotspots && Array.isArray(sceneData.hotspots)) {
+            sceneData.hotspots.forEach(spot => {
+              const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Arrow);
+              infospot.position.set(spot.pitch, spot.yaw, spot.distance);
+              infospot.addHoverText(`Go to: ${spot.targetScene.replace(/_/g, ' ')}`);
+
+              infospot.addEventListener('click', () => {
+                switchActiveRoom(spot.targetScene);
+              });
+
+              newPano.add(infospot);
+            });
+          }
+
+          newPano.addEventListener('load', () => {
+            hideLoadingOverlay();
+            if (viewer) viewer.onWindowResize();
+          });
+
+          panoCache[roomKey] = newPano;
+          viewer.add(newPano);
+        }
+
+        viewer.setPanorama(panoCache[roomKey]);
+
+        // Restore initial camera orientation if saved
+        if (sceneData.initialLook && !isNaN(sceneData.initialLook.x)) {
+          const look = sceneData.initialLook;
+          const targetVector = new THREE.Vector3(look.x, look.y, look.z);
+          setTimeout(() => {
+            if (viewer && typeof viewer.tweenControlCenter === 'function') {
+              viewer.tweenControlCenter(targetVector, 0);
+            }
+          }, 350);
+        }
+
+        setTimeout(() => {
+          if (viewer) viewer.onWindowResize();
+          hideLoadingOverlay();
+        }, 300);
+
+      } catch (err) {
+        hideLoadingOverlay();
+        console.error("Panorama loading error:", err);
+        alert("Unable to render room image: " + err.message);
+      }
+    }
+  </script>
 </body>
 </html>
