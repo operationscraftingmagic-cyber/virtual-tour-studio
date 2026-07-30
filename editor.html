@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>360° Virtual Tour Editor</title>
 
-  <!-- Polyfill Node.js 'process' object for browser compatibility -->
+  <!-- Node.js 'process' Polyfill for Browser Compatibility -->
   <script>
     window.process = { env: { NODE_ENV: 'production' } };
   </script>
@@ -232,7 +232,7 @@
       </div>
     </div>
 
-    <!-- Right Control Panel -->
+    <!-- Control Panel -->
     <div id="control-panel">
 
       <!-- SECTION 1: ADD NEW ROOM -->
@@ -313,6 +313,11 @@
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
+
+    // Force Long-Polling to bypass WebSocket/gRPC 10s backend connection timeouts
+    db.settings({ 
+      experimentalForceLongPolling: true 
+    });
 
     const urlParams = new URLSearchParams(window.location.search);
     const projectId = urlParams.get('project') || 'demo_tour';
@@ -488,9 +493,7 @@
 
       try {
         if (!panoCache[activeSceneKey]) {
-          // Preload the image element fully before passing to Panolens
           const loadedImg = await preloadImage(sceneData.image);
-          
           const newPano = new PANOLENS.ImagePanorama(loadedImg.src);
 
           newPano.addEventListener('load', () => {
@@ -698,15 +701,26 @@
     }
 
     // =========================================================================
-    // CLOUD DATABASE FIRESTORE SYNC
+    // CLOUD DATABASE FIRESTORE SYNC WITH FALLBACKS
     // =========================================================================
     async function loadProjectFromCloud() {
       try {
         showLoadingOverlay("Fetching tour data from Firestore...");
         const docRef = db.collection('projects').doc(projectId);
-        const docSnap = await docRef.get();
 
-        if (docSnap.exists) {
+        let docSnap;
+        try {
+          docSnap = await docRef.get();
+        } catch (netErr) {
+          console.warn("Live network request failed. Attempting offline cache...", netErr);
+          try {
+            docSnap = await docRef.get({ source: 'cache' });
+          } catch (cacheErr) {
+            throw new Error("Could not connect to Firestore backend and no offline cache exists.");
+          }
+        }
+
+        if (docSnap && docSnap.exists) {
           activeProjectData = docSnap.data();
           rebuildInterfaceDropdowns();
 
@@ -718,11 +732,13 @@
             hideLoadingOverlay();
           }
         } else {
+          console.warn(`No existing project found for ID "${projectId}". Ready for new scenes.`);
           hideLoadingOverlay();
         }
       } catch (err) {
         console.error("Error loading project from Firestore:", err);
         hideLoadingOverlay();
+        alert("Database Connection Warning:\n\n" + err.message + "\n\nYou can still work and add rooms, then click 'Save All Changes' once connected.");
       }
     }
 
@@ -733,7 +749,7 @@
 
       try {
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Save operation timed out (10s). Check Firestore rules.")), 10000)
+          setTimeout(() => reject(new Error("Save operation timed out (10s). Check network or Firestore Security Rules.")), 10000)
         );
 
         const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
