@@ -5,6 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>360° Virtual Tour Editor</title>
 
+  <!-- Polyfill Node.js 'process' object for browser compatibility -->
+  <script>
+    window.process = { env: { NODE_ENV: 'production' } };
+  </script>
+
   <!-- Core Libraries -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r105/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panolens@0.12.1/build/panolens.min.js"></script>
@@ -60,7 +65,7 @@
       background-color: #000;
       position: relative;
     }
-    /* Force Three.js canvas to fill container */
+    /* Enforce canvas sizing */
     #viewer-canvas canvas {
       width: 100% !important;
       height: 100% !important;
@@ -75,7 +80,7 @@
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0,0,0,0.8);
+      background: rgba(0,0,0,0.85);
       color: #00e676;
       font-size: 1.1rem;
       display: flex;
@@ -227,7 +232,7 @@
       </div>
     </div>
 
-    <!-- Control Panel -->
+    <!-- Right Control Panel -->
     <div id="control-panel">
 
       <!-- SECTION 1: ADD NEW ROOM -->
@@ -321,10 +326,10 @@
     let viewer = null;
     let currentPanoObj = null;
     let currentClickedVector = null;
-    const panoCache = {}; // Cache to preserve WebGL textures across scene switches
+    const panoCache = {};
 
     // =========================================================================
-    // INITIALIZATION & EVENT LISTENERS
+    // INITIALIZATION
     // =========================================================================
     window.addEventListener('DOMContentLoaded', async () => {
       const container = document.getElementById('viewer-canvas');
@@ -339,7 +344,7 @@
         if (viewer) viewer.onWindowResize();
       });
 
-      // Capture Clicked 3D Coordinates via Recursive Raycasting
+      // Capture Clicked 3D Coordinates via Raycaster
       container.addEventListener('click', (event) => {
         if (!viewer || !currentPanoObj) return;
 
@@ -352,7 +357,6 @@
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, viewer.getCamera());
         
-        // Recursive Raycast search inside ImagePanorama children meshes
         const intersects = raycaster.intersectObject(currentPanoObj, true);
 
         if (intersects.length > 0) {
@@ -366,7 +370,7 @@
         }
       });
 
-      // Bind UI Buttons
+      // UI Button Bindings
       document.getElementById('scene-selector').addEventListener('change', (e) => switchActiveRoom(e.target.value));
       document.getElementById('set-start-scene-btn').addEventListener('click', setStartRoom);
       document.getElementById('set-default-view-btn').addEventListener('click', captureDefaultViewpoint);
@@ -380,8 +384,18 @@
     });
 
     // =========================================================================
-    // OVERLAY STATUS HELPERS
+    // HELPER: PRELOAD PANORAMA IMAGE (Prevents texImage2D error)
     // =========================================================================
+    function preloadImage(url) {
+      return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Image failed to load or cross-origin policy blocked access."));
+        img.src = url;
+      });
+    }
+
     function showLoadingOverlay(msg) {
       const el = document.getElementById('loading-overlay');
       document.getElementById('loading-text').innerText = msg || "Loading...";
@@ -393,35 +407,6 @@
       const el = document.getElementById('loading-overlay');
       el.style.opacity = '0';
       setTimeout(() => { el.style.display = 'none'; }, 300);
-    }
-
-    // =========================================================================
-    // CLIENT-SIDE IMAGE COMPRESSOR
-    // =========================================================================
-    function compressImageOnClient(file) {
-      return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = (e) => {
-          const img = new Image();
-          img.src = e.target.result;
-          img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = img.width;
-            canvas.height = img.height;
-            const ctx = canvas.getContext('2d');
-            ctx.drawImage(img, 0, 0);
-
-            canvas.toBlob((blob) => {
-              if (!blob) return reject(new Error("Compression failed"));
-              const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
-              resolve(compressedFile);
-            }, 'image/jpeg', 0.85);
-          };
-          img.onerror = reject;
-        };
-        reader.onerror = reject;
-      });
     }
 
     // =========================================================================
@@ -443,16 +428,9 @@
       const cleanId = rawId.toLowerCase().replace(/[^a-z0-9]/g, '_');
       
       addBtn.disabled = true;
-      addBtn.innerText = "Processing Image...";
+      addBtn.innerText = "Uploading to Cloudinary...";
 
       try {
-        if (file.size > 9.5 * 1024 * 1024) {
-          addBtn.innerText = "Compressing Photo...";
-          file = await compressImageOnClient(file);
-        }
-
-        addBtn.innerText = "Uploading to Cloudinary...";
-
         const formData = new FormData();
         formData.append('file', file);
         formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
@@ -502,51 +480,53 @@
       renderActivePano();
     }
 
-    function renderActivePano() {
+    async function renderActivePano() {
       const sceneData = activeProjectData.scenes[activeSceneKey];
       if (!sceneData || !sceneData.image) return;
 
-      showLoadingOverlay("Loading 360° Scene...");
+      showLoadingOverlay("Preloading 360° Image...");
 
-      // Instantiates or retrieves cached Panolens Panorama instance
-      if (!panoCache[activeSceneKey]) {
-        const newPano = new PANOLENS.ImagePanorama(sceneData.image);
+      try {
+        if (!panoCache[activeSceneKey]) {
+          // Preload the image element fully before passing to Panolens
+          const loadedImg = await preloadImage(sceneData.image);
+          
+          const newPano = new PANOLENS.ImagePanorama(loadedImg.src);
 
-        newPano.addEventListener('load', () => {
-          hideLoadingOverlay();
-          if (viewer) viewer.onWindowResize();
-        });
+          newPano.addEventListener('load', () => {
+            hideLoadingOverlay();
+            if (viewer) viewer.onWindowResize();
+          });
 
-        newPano.addEventListener('error', (err) => {
-          hideLoadingOverlay();
-          console.error("Panorama loading error:", err);
-          alert("Could not load 360° image texture. Please check image URL.");
-        });
+          panoCache[activeSceneKey] = newPano;
+          viewer.add(newPano);
+        }
 
-        panoCache[activeSceneKey] = newPano;
-        viewer.add(newPano);
-      }
+        currentPanoObj = panoCache[activeSceneKey];
+        viewer.setPanorama(currentPanoObj);
 
-      currentPanoObj = panoCache[activeSceneKey];
-      viewer.setPanorama(currentPanoObj);
-
-      // Trigger canvas resize calls after layout settles
-      setTimeout(() => {
-        if (viewer) viewer.onWindowResize();
-        hideLoadingOverlay();
-      }, 400);
-
-      drawHotspotsToWorkspace();
-      renderHotspotsManagementList();
-
-      if (sceneData.initialLook && !isNaN(sceneData.initialLook.x)) {
-        const look = sceneData.initialLook;
-        const targetVector = new THREE.Vector3(look.x, look.y, look.z);
         setTimeout(() => {
-          if (viewer && typeof viewer.tweenControlCenter === 'function') {
-            viewer.tweenControlCenter(targetVector, 0);
-          }
-        }, 500);
+          if (viewer) viewer.onWindowResize();
+          hideLoadingOverlay();
+        }, 300);
+
+        drawHotspotsToWorkspace();
+        renderHotspotsManagementList();
+
+        if (sceneData.initialLook && !isNaN(sceneData.initialLook.x)) {
+          const look = sceneData.initialLook;
+          const targetVector = new THREE.Vector3(look.x, look.y, look.z);
+          setTimeout(() => {
+            if (viewer && typeof viewer.tweenControlCenter === 'function') {
+              viewer.tweenControlCenter(targetVector, 0);
+            }
+          }, 400);
+        }
+
+      } catch (err) {
+        hideLoadingOverlay();
+        console.error("Panorama rendering error:", err);
+        alert("Could not load image: " + err.message);
       }
 
       currentClickedVector = null;
@@ -638,7 +618,6 @@
     function drawHotspotsToWorkspace() {
       if (!currentPanoObj) return;
 
-      // Clean up previous Infospots attached to this panorama
       if (currentPanoObj.children) {
         const existingSpots = currentPanoObj.children.filter(c => c instanceof PANOLENS.Infospot);
         existingSpots.forEach(spot => currentPanoObj.remove(spot));
@@ -732,9 +711,9 @@
           rebuildInterfaceDropdowns();
 
           if (activeProjectData.initialScene && activeProjectData.scenes[activeProjectData.initialScene]) {
-            switchActiveRoom(activeProjectData.initialScene);
+            await switchActiveRoom(activeProjectData.initialScene);
           } else if (Object.keys(activeProjectData.scenes).length > 0) {
-            switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
+            await switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
           } else {
             hideLoadingOverlay();
           }
