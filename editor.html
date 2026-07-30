@@ -300,13 +300,61 @@
     const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
     const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
 
-    // Custom Semi-Transparent Hotspot Icon with 4px Solid Black Border
-    const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
-      <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
-        <circle cx="32" cy="32" r="26" fill="rgba(255, 255, 255, 0.65)" stroke="#000000" stroke-width="4" />
-        <path d="M32 14 L46 36 L36 36 L36 48 L28 48 L28 36 L18 36 Z" fill="#000000" opacity="0.85" />
-      </svg>
-    `);
+// =========================================================================
+// GLOWING HOTSPOT ICON (Aaron Iker Style Glow Effect)
+// =========================================================================
+const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+  <svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+    <defs>
+      <!-- Multi-layer Neon Glow Filter -->
+      <filter id="neon-glow" x="-50%" y="-50%" width="200%" height="200%">
+        <feGaussianBlur stdDeviation="4" result="blur1" />
+        <feGaussianBlur stdDeviation="10" result="blur2" />
+        <feMerge>
+          <feMergeNode in="blur2" />
+          <feMergeNode in="blur1" />
+          <feMergeNode in="SourceGraphic" />
+        </feMerge>
+      </filter>
+
+      <!-- Gradient Border -->
+      <linearGradient id="glow-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+        <stop offset="0%" stop-color="#00e676" />
+        <stop offset="50%" stop-color="#2979ff" />
+        <stop offset="100%" stop-color="#00e676" />
+      </linearGradient>
+    </defs>
+
+    <style>
+      @keyframes pulseRing {
+        0% { transform: scale(0.88); opacity: 0.5; }
+        50% { transform: scale(1.08); opacity: 1; }
+        100% { transform: scale(0.88); opacity: 0.5; }
+      }
+      @keyframes floatArrow {
+        0%, 100% { transform: translateY(0px); }
+        50% { transform: translateY(-3px); }
+      }
+      .pulse-ring {
+        transform-origin: center;
+        animation: pulseRing 2s infinite ease-in-out;
+      }
+      .arrow-icon {
+        transform-origin: center;
+        animation: floatArrow 1.5s infinite ease-in-out;
+      }
+    </style>
+
+    <!-- Outer Animated Glow Aura -->
+    <circle class="pulse-ring" cx="64" cy="64" r="46" fill="none" stroke="url(#glow-grad)" stroke-width="5" filter="url(#neon-glow)" />
+
+    <!-- Dark Glassmorphism Inner Button Core -->
+    <circle cx="64" cy="64" r="38" fill="rgba(18, 18, 18, 0.85)" stroke="url(#glow-grad)" stroke-width="3" filter="url(#neon-glow)" />
+
+    <!-- Directional Portal Arrow -->
+    <path class="arrow-icon" d="M64 42 L80 64 L70 64 L70 82 L58 82 L58 64 L48 64 Z" fill="#00e676" filter="url(#neon-glow)" />
+  </svg>
+`);
 
     const firebaseConfig = {
       apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
