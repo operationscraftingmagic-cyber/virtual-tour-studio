@@ -294,11 +294,19 @@
 
   <script>
     // =========================================================================
-    // CONFIGURATION KEYS
+    // CONFIGURATION & CUSTOM ICONS
     // =========================================================================
     
     const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
     const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
+
+    // Custom Semi-Transparent Hotspot Icon with 4px Solid Black Border
+    const HOTSPOT_CUSTOM_ICON = 'data:image/svg+xml;utf8,' + encodeURIComponent(`
+      <svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+        <circle cx="32" cy="32" r="26" fill="rgba(255, 255, 255, 0.65)" stroke="#000000" stroke-width="4" />
+        <path d="M32 14 L46 36 L36 36 L36 48 L28 48 L28 36 L18 36 Z" fill="#000000" opacity="0.85" />
+      </svg>
+    `);
 
     const firebaseConfig = {
       apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
@@ -314,7 +322,7 @@
     }
     const db = firebase.firestore();
 
-    // Force Long-Polling to bypass WebSocket/gRPC 10s backend connection timeouts
+    // Force Long-Polling to bypass WebSocket/gRPC backend connection timeouts
     db.settings({ 
       experimentalForceLongPolling: true 
     });
@@ -543,24 +551,38 @@
       alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
+    // FIX 1: Save View Angle functionality
     function captureDefaultViewpoint() {
-      if (!viewer || !activeSceneKey) return;
+      if (!viewer || !activeSceneKey || !activeProjectData.scenes[activeSceneKey]) {
+        alert("Please select an active room scene first.");
+        return;
+      }
 
-      const target = viewer.getControlVector();
+      let targetVector = new THREE.Vector3();
 
-      if (!target || isNaN(target.x)) {
-        alert("Unable to read camera position. Rotate room and try again.");
+      if (viewer && viewer.control && typeof viewer.control.getCenter === 'function') {
+        targetVector = viewer.control.getCenter();
+      } else if (viewer && typeof viewer.getControlCenter === 'function') {
+        targetVector = viewer.getControlCenter();
+      } else if (viewer && viewer.getCamera()) {
+        const dir = new THREE.Vector3();
+        viewer.getCamera().getWorldDirection(dir);
+        targetVector = dir.multiplyScalar(1000);
+      }
+
+      if (!targetVector || isNaN(targetVector.x)) {
+        alert("Unable to read camera position. Rotate the view and try again.");
         return;
       }
 
       const lookVector = {
-        x: Math.round(target.x),
-        y: Math.round(target.y),
-        z: Math.round(target.z)
+        x: parseFloat(targetVector.x.toFixed(2)),
+        y: parseFloat(targetVector.y.toFixed(2)),
+        z: parseFloat(targetVector.z.toFixed(2))
       };
 
       activeProjectData.scenes[activeSceneKey].initialLook = lookVector;
-      alert("Default camera orientation angle captured and saved!");
+      alert(`Default view angle saved for "${activeSceneKey.replace(/_/g, ' ')}"! Remember to click "Save All Changes".`);
     }
 
     function deleteActiveRoom() {
@@ -618,6 +640,7 @@
       renderActivePano();
     }
 
+    // FIX 2: Draw Hotspots using HOTSPOT_CUSTOM_ICON
     function drawHotspotsToWorkspace() {
       if (!currentPanoObj) return;
 
@@ -630,7 +653,7 @@
       if (!sceneData || !sceneData.hotspots) return;
 
       sceneData.hotspots.forEach((spot) => {
-        const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Arrow);
+        const infospot = new PANOLENS.Infospot(350, HOTSPOT_CUSTOM_ICON);
         infospot.position.set(spot.pitch, spot.yaw, spot.distance);
         infospot.addHoverText(`Portal to: ${spot.targetScene}`);
 
