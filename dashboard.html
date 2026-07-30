@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Virtual Tour Project Hub</title>
+    <style>
+        body {
+            margin: 0; padding: 0; min-height: 100vh;
+            background: #121212; color: #fff;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            box-sizing: border-box; display: flex; flex-direction: column; align-items: center;
+        }
+        .container { width: 90%; max-width: 1200px; padding: 40px 0; }
+        header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px; border-bottom: 2px solid #2d2d2d; padding-bottom: 20px;}
+        h1 { margin: 0; color: #00bcd4; font-size: 32px; font-weight: 600; }
+        
+        .creator-box {
+            background: #1e1e1e; padding: 20px; border-radius: 12px;
+            border: 1px solid #333; display: flex; gap: 15px; align-items: center; margin-bottom: 30px;
+        }
+        input[type="text"] {
+            flex: 1; padding: 12px; background: #2d2d2d; color: #fff;
+            border: 1px solid #444; border-radius: 6px; font-size: 14px;
+        }
+        input[type="text"]:focus { border-color: #00bcd4; outline: none; }
+        button {
+            padding: 12px 24px; font-weight: bold; border-radius: 6px;
+            border: none; cursor: pointer; font-size: 14px; transition: all 0.15s ease;
+        }
+        .btn-create { background: #00bcd4; color: #fff; }
+        .btn-create:hover { background: #0097a7; }
+
+        .project-grid {
+            display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 25px; width: 100%;
+        }
+        .project-card {
+            background: #1e1e1e; border: 1px solid #333; border-radius: 12px;
+            padding: 24px; display: flex; flex-direction: column; gap: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); transition: transform 0.2s;
+        }
+        .project-card:hover { transform: translateY(-3px); border-color: #444; }
+        .project-info h3 { margin: 0; font-size: 20px; color: #ff9800; }
+        .project-info p { margin: 5px 0 0 0; color: #aaa; font-size: 12px; font-family: monospace; }
+        
+        .card-actions { display: flex; gap: 10px; margin-top: auto; }
+        .btn-card { padding: 8px 12px; font-size: 12px; flex: 1; text-align: center; text-decoration: none; border-radius: 4px; }
+        .btn-edit { background: #333; color: #fff; border: 1px solid #444; }
+        .btn-edit:hover { background: #444; }
+        .btn-view { background: #4caf50; color: #fff; }
+        .btn-view:hover { background: #388e3c; }
+        .btn-delete { background: #f44336; color: #fff; flex: 0; padding: 8px 10px; }
+        .btn-delete:hover { background: #d32f2f; }
+        
+        .status-msg { text-align: center; color: #777; width: 100%; font-size: 18px; margin-top: 50px; }
+    </style>
+
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+    <div class="container">
+        <header>
+            <h1>Virtual VR Control Hub</h1>
+        </header>
+
+        <div class="creator-box">
+            <input type="text" id="new-project-name" placeholder="Enter new project name (e.g., Luxury Penthouse)">
+            <button class="btn-create" id="submit-project-btn">➕ Create Project Space</button>
+        </div>
+
+        <div id="project-grid-container" class="project-grid">
+            <div class="status-msg">Synchronizing with Cloud Documents...</div>
+        </div>
+    </div>
+
+    <script>
+        // Guard check to make sure scripts are completely loaded
+        if (typeof firebase === 'undefined') {
+            alert("CRITICAL ERROR: Firebase library was blocked from loading! Check your internet or disable Ad-Blockers for this local tab.");
+        }
+
+        // Your authenticated Firebase configuration setup parameters
+        const firebaseConfig = {
+            apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
+            authDomain: "virtualtour-54c99.firebaseapp.com",
+            projectId: "virtualtour-54c99",
+            storageBucket: "virtualtour-54c99.firebasestorage.app",
+            messagingSenderId: "52412538071",
+            appId: "1:52412538071:web:eb9799ac8ebac146cbe492",
+            measurementId: "G-PG5TE98PGB"
+        };
+
+        // Initialize App Connection State Modules
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        // Safe Lifecycle Bootup Handler
+        document.addEventListener('DOMContentLoaded', () => {
+            // Bind the creation button safely using modern event assignment
+            const createBtn = document.getElementById('submit-project-btn');
+            if (createBtn) {
+                createBtn.addEventListener('click', createNewCloudProject);
+            }
+
+            downloadActiveCloudIndex();
+        });
+
+        // Fetch all project summaries in real-time from Firestore
+        function downloadActiveCloudIndex() {
+            const grid = document.getElementById('project-grid-container');
+            
+            db.collection("vrtours").onSnapshot((snapshot) => {
+                grid.innerHTML = "";
+
+                if (snapshot.empty) {
+                    grid.innerHTML = '<div class="status-msg">No virtual tours found in the cloud. Create one above!</div>';
+                    return;
+                }
+
+                snapshot.forEach((doc) => {
+                    const data = doc.data();
+                    const docId = doc.id;
+                    const roomCount = data.scenes ? Object.keys(data.scenes).length : 0;
+
+                    const card = document.createElement('div');
+                    card.className = 'project-card';
+                    card.innerHTML = `
+                        <div class="project-info">
+                            <h3>${data.name || 'Unnamed Tour'}</h3>
+                            <p>ID: ${docId}</p>
+                            <span style="font-size: 12px; color: #888;">${roomCount} Scene Room(s) Configured</span>
+                        </div>
+                        <div class="card-actions">
+                            <a href="editor.html?id=${docId}" class="btn-card btn-edit">⚙️ Edit Project</a>
+                            <a href="view_project.html?id=${docId}" class="btn-card btn-view">👁️ Present</a>
+                            <button class="btn-card btn-delete" data-id="${docId}" data-name="${data.name}">🗑️</button>
+                        </div>
+                    `;
+
+                    // Bind delete listener cleanly directly to the newly spawned button node
+                    card.querySelector('.btn-delete').addEventListener('click', function() {
+                        const id = this.getAttribute('data-id');
+                        const name = this.getAttribute('data-name');
+                        deleteCloudProject(id, name);
+                    });
+
+                    grid.appendChild(card);
+                });
+            }, (error) => {
+                grid.innerHTML = `<div class="status-msg" style="color:#f44336">Connection Error: ${error.message}</div>`;
+            });
+        }
+
+        // Generate standardized token documents in Firestore strings
+        function createNewCloudProject() {
+            const input = document.getElementById('new-project-name');
+            const name = input.value.trim();
+
+            if (!name) {
+                alert("Please declare a title configuration string value first!");
+                return;
+            }
+
+            const cleanId = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+            db.collection("vrtours").doc(cleanId).get().then((doc) => {
+                if (doc.exists) {
+                    alert("A project container registry token with that derived ID path already exists!");
+                    return;
+                }
+
+                return db.collection("vrtours").doc(cleanId).set({
+                    name: name,
+                    initialScene: "",
+                    scenes: {}
+                });
+            }).then(() => {
+                input.value = "";
+                window.location.href = `editor.html?id=${cleanId}`;
+            }).catch((err) => {
+                alert("Error building document data structures: " + err.message);
+            });
+        }
+
+        // Wipe specified project document lines instantly
+        function deleteCloudProject(docId, name) {
+            if (confirm(`Are you sure you want to permanently delete "${name}" and all its portal layout configuration markers?`)) {
+                db.collection("vrtours").doc(docId).delete()
+                    .then(() => alert("Document structure dropped cleanly!"))
+                    .catch((err) => alert("Cloud delete failure transaction: " + err.message));
+            }
+        }
+    </script>
+</body>
+</html>
