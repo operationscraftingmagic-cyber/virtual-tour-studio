@@ -294,10 +294,9 @@
 
   <script>
     // =========================================================================
-    // CONFIGURATION KEYS & ASSETS
+    // CONFIGURATION KEYS
     // =========================================================================
     
-    const HOTSPOT_IMAGE_URL = "https://github.com/operationscraftingmagic-cyber/virtual-tour-studio/blob/main/ButtonArrow.png";
     const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
     const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
 
@@ -315,7 +314,7 @@
     }
     const db = firebase.firestore();
 
-    // Force Long-Polling to bypass WebSocket/gRPC backend connection timeouts
+    // Force Long-Polling to bypass WebSocket/gRPC 10s backend connection timeouts
     db.settings({ 
       experimentalForceLongPolling: true 
     });
@@ -390,7 +389,7 @@
     });
 
     // =========================================================================
-    // HELPER: PRELOAD PANORAMA IMAGE
+    // HELPER: PRELOAD PANORAMA IMAGE (Prevents texImage2D error)
     // =========================================================================
     function preloadImage(url) {
       return new Promise((resolve, reject) => {
@@ -522,7 +521,7 @@
           const targetVector = new THREE.Vector3(look.x, look.y, look.z);
           setTimeout(() => {
             if (viewer && typeof viewer.tweenControlCenter === 'function') {
-              viewer.tweenControlCenter(targetVector, 300);
+              viewer.tweenControlCenter(targetVector, 0);
             }
           }, 400);
         }
@@ -544,49 +543,33 @@
       alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
-    // FIXED: Save Default Camera View Angle with fallback vector calculation
     function captureDefaultViewpoint() {
       if (!viewer || !activeSceneKey) {
-        alert("Please select and load a room first.");
+        alert("No room is currently active.");
         return;
       }
 
-      try {
-        let target = null;
-
-        // Try Panolens getControlVector
-        if (typeof viewer.getControlVector === 'function') {
-          target = viewer.getControlVector();
-        }
-
-        // Fallback: Calculate direction vector using Three.js Camera
-        if (!target || isNaN(target.x)) {
-          const camera = viewer.getCamera();
-          if (camera) {
-            const dir = new THREE.Vector3();
-            camera.getWorldDirection(dir);
-            target = dir.multiplyScalar(5000); // Scale out to panorama inner surface
-          }
-        }
-
-        if (!target || isNaN(target.x)) {
-          alert("Unable to read camera position. Try rotating the panorama view slightly.");
-          return;
-        }
-
-        const lookVector = {
-          x: Math.round(target.x),
-          y: Math.round(target.y),
-          z: Math.round(target.z)
-        };
-
-        activeProjectData.scenes[activeSceneKey].initialLook = lookVector;
-        alert(`Default camera view angle saved for room "${activeSceneKey}"!\n(X: ${lookVector.x}, Y: ${lookVector.y}, Z: ${lookVector.z})`);
-
-      } catch (err) {
-        console.error("Error capturing default viewpoint:", err);
-        alert("Error saving view angle: " + err.message);
+      // Read current orientation target via Panolens API (getControlCenter) or controls fallback
+      let target = null;
+      if (typeof viewer.getControlCenter === 'function') {
+        target = viewer.getControlCenter();
+      } else if (viewer.controls && viewer.controls.target) {
+        target = viewer.controls.target;
       }
+
+      if (!target || isNaN(target.x)) {
+        alert("Unable to read camera position. Rotate room and try again.");
+        return;
+      }
+
+      const lookVector = {
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        z: Math.round(target.z)
+      };
+
+      activeProjectData.scenes[activeSceneKey].initialLook = lookVector;
+      alert(`Default camera view angle captured and saved for [${activeSceneKey}]! Click 'Save All Changes' to save to cloud.`);
     }
 
     function deleteActiveRoom() {
@@ -618,7 +601,7 @@
     }
 
     // =========================================================================
-    // HOTSPOT PORTAL LOGIC (UPDATED WITH CUSTOM BUTTON IMAGE)
+    // HOTSPOT PORTAL LOGIC
     // =========================================================================
     function addHotspotToRoom() {
       if (!currentClickedVector || !activeSceneKey) return;
@@ -656,8 +639,7 @@
       if (!sceneData || !sceneData.hotspots) return;
 
       sceneData.hotspots.forEach((spot) => {
-        // Uses your custom GitHub ButtonArrow.png URL
-        const infospot = new PANOLENS.Infospot(350, HOTSPOT_IMAGE_URL);
+        const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Arrow);
         infospot.position.set(spot.pitch, spot.yaw, spot.distance);
         infospot.addHoverText(`Portal to: ${spot.targetScene}`);
 
