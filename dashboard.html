@@ -222,7 +222,7 @@
       </div>
       <div class="modal-actions">
         <button class="secondary" onclick="closeCreateModal()">Cancel</button>
-        <button onclick="handleCreateProject()">Create & Open Editor</button>
+        <button id="create-project-btn" onclick="handleCreateProject()">Create & Open Editor</button>
       </div>
     </div>
   </div>
@@ -240,6 +240,12 @@
       appId: "YOUR_APP_ID"
     };
 
+    // Helper to check for missing API keys
+    function isFirebaseConfigured() {
+      return firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" && 
+             firebaseConfig.projectId !== "YOUR_PROJECT_ID";
+    }
+
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
@@ -250,6 +256,18 @@
     // =========================================================================
     async function loadAllProjects() {
       const grid = document.getElementById('project-grid');
+
+      if (!isFirebaseConfigured()) {
+        grid.innerHTML = `
+          <div class="empty-state" style="border-color: #ffb74d;">
+            <h3 style="color: #ffb74d;">Firebase Credentials Required</h3>
+            <p style="color:#aaa; font-size:0.9rem; margin-top:8px;">
+              Please open <code>dashboard.html</code> in a code editor and replace <strong>YOUR_FIREBASE_API_KEY</strong> and <strong>YOUR_PROJECT_ID</strong> with your real Firebase config values.
+            </p>
+          </div>
+        `;
+        return;
+      }
 
       try {
         const snapshot = await db.collection('projects').get();
@@ -308,7 +326,15 @@
 
       } catch (error) {
         console.error("Error loading projects:", error);
-        grid.innerHTML = `<div class="empty-state" style="color:#ff5252;">Failed to load projects: ${error.message}</div>`;
+        grid.innerHTML = `
+          <div class="empty-state" style="color:#ff5252; border-color: #ff5252;">
+            <h3>Connection Error</h3>
+            <p style="margin-top:8px; font-size:0.9rem;">${error.message}</p>
+            <p style="margin-top:10px; font-size:0.8rem; color:#aaa;">
+              Ensure your browser isn't blocking <code>firestore.googleapis.com</code> (disable ad-blockers or Brave Shields if active).
+            </p>
+          </div>
+        `;
       }
     }
 
@@ -316,6 +342,10 @@
     // CREATE NEW PROJECT
     // =========================================================================
     function openCreateModal() {
+      if (!isFirebaseConfigured()) {
+        alert("Please set your Firebase credentials inside dashboard.html before creating a project.");
+        return;
+      }
       document.getElementById('create-modal').style.display = 'flex';
       document.getElementById('new-project-name').focus();
     }
@@ -327,6 +357,7 @@
 
     async function handleCreateProject() {
       const input = document.getElementById('new-project-name');
+      const createBtn = document.getElementById('create-project-btn');
       const rawName = input.value.trim();
 
       if (!rawName) {
@@ -334,27 +365,30 @@
         return;
       }
 
-      // Convert spaces or special characters to clean ID string
+      // Convert spaces and special characters to clean ID string
       const cleanProjectId = rawName.toLowerCase().replace(/[^a-z0-9_-]/g, '_');
+
+      createBtn.disabled = true;
+      createBtn.innerText = "Creating...";
 
       try {
         const docRef = db.collection('projects').doc(cleanProjectId);
-        const docSnap = await docRef.get();
 
-        // Check if project already exists
-        if (!docSnap.exists) {
-          await docRef.set({
-            initialScene: "",
-            scenes: {}
-          });
-        }
+        // Safe merge write prevents offline blocking errors
+        await docRef.set({
+          initialScene: "",
+          scenes: {}
+        }, { merge: true });
 
-        // Redirect directly to the editor for this project
+        // Redirect directly to editor
         window.location.href = `editor.html?project=${cleanProjectId}`;
 
       } catch (error) {
         console.error("Error creating project:", error);
         alert("Failed to create project: " + error.message);
+      } finally {
+        createBtn.disabled = false;
+        createBtn.innerText = "Create & Open Editor";
       }
     }
 
@@ -379,7 +413,7 @@
 
       try {
         await db.collection('projects').doc(projectId).delete();
-        loadAllProjects(); // Refresh dashboard
+        loadAllProjects(); // Refresh grid
       } catch (error) {
         console.error("Error deleting project:", error);
         alert("Failed to delete project: " + error.message);
