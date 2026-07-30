@@ -35,6 +35,7 @@
       justify-content: space-between;
       align-items: center;
       border-bottom: 1px solid #333;
+      z-index: 10;
     }
     header h1 {
       font-size: 1.1rem;
@@ -50,6 +51,7 @@
       height: calc(100vh - 55px);
       position: relative;
       width: 100%;
+      overflow: hidden;
     }
     #viewer-canvas {
       flex: 1;
@@ -57,6 +59,31 @@
       width: 100%;
       background-color: #000;
       position: relative;
+    }
+    /* Force Three.js canvas to fill container */
+    #viewer-canvas canvas {
+      width: 100% !important;
+      height: 100% !important;
+      position: absolute;
+      top: 0;
+      left: 0;
+      outline: none;
+    }
+    #loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      color: #00e676;
+      font-size: 1.1rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 50;
+      pointer-events: none;
+      transition: opacity 0.3s ease;
     }
     #control-panel {
       width: 380px;
@@ -67,6 +94,7 @@
       display: flex;
       flex-direction: column;
       gap: 20px;
+      z-index: 10;
     }
     .panel-section {
       background-color: #222;
@@ -193,9 +221,13 @@
 
   <div id="editor-container">
     <!-- 360 Canvas -->
-    <div id="viewer-canvas"></div>
+    <div id="viewer-canvas">
+      <div id="loading-overlay" style="display:none;">
+        <span id="loading-text">Loading 360° Scene...</span>
+      </div>
+    </div>
 
-    <!-- Right Control Panel -->
+    <!-- Control Panel -->
     <div id="control-panel">
 
       <!-- SECTION 1: ADD NEW ROOM -->
@@ -260,11 +292,9 @@
     // CONFIGURATION KEYS
     // =========================================================================
     
-    // 1. Cloudinary Credentials
     const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
     const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
 
-    // 2. Firebase Database Credentials
     const firebaseConfig = {
       apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
       authDomain: "virtualtour-54c99.firebaseapp.com",
@@ -274,17 +304,14 @@
       appId: "1:52412538071:web:eb9799ac8ebac146cbe492"
     };
 
-    // Initialize Firebase
     if (!firebase.apps.length) {
       firebase.initializeApp(firebaseConfig);
     }
     const db = firebase.firestore();
 
-    // Project URL State
     const urlParams = new URLSearchParams(window.location.search);
     const projectId = urlParams.get('project') || 'demo_tour';
 
-    // App State Structure
     let activeProjectData = {
       initialScene: "",
       scenes: {}
@@ -294,6 +321,7 @@
     let viewer = null;
     let currentPanoObj = null;
     let currentClickedVector = null;
+    const panoCache = {}; // Cache to preserve WebGL textures across scene switches
 
     // =========================================================================
     // INITIALIZATION & EVENT LISTENERS
@@ -301,19 +329,17 @@
     window.addEventListener('DOMContentLoaded', async () => {
       const container = document.getElementById('viewer-canvas');
 
-      // Initialize Panolens Viewer
       viewer = new PANOLENS.Viewer({
         container: container,
         autoHideInfospot: false,
         controlBar: true
       });
 
-      // Handle window resizing automatically
       window.addEventListener('resize', () => {
         if (viewer) viewer.onWindowResize();
       });
 
-      // Capture Clicked 3D Coordinates on Panolens Sphere
+      // Capture Clicked 3D Coordinates via Recursive Raycasting
       container.addEventListener('click', (event) => {
         if (!viewer || !currentPanoObj) return;
 
@@ -325,7 +351,9 @@
 
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, viewer.getCamera());
-        const intersects = raycaster.intersectObject(currentPanoObj);
+        
+        // Recursive Raycast search inside ImagePanorama children meshes
+        const intersects = raycaster.intersectObject(currentPanoObj, true);
 
         if (intersects.length > 0) {
           const pt = intersects[0].point;
@@ -338,7 +366,7 @@
         }
       });
 
-      // Setup UI Button Click Handlers
+      // Bind UI Buttons
       document.getElementById('scene-selector').addEventListener('change', (e) => switchActiveRoom(e.target.value));
       document.getElementById('set-start-scene-btn').addEventListener('click', setStartRoom);
       document.getElementById('set-default-view-btn').addEventListener('click', captureDefaultViewpoint);
@@ -348,9 +376,24 @@
       document.getElementById('back-dashboard-btn').addEventListener('click', () => window.location.href = 'dashboard.html');
       document.getElementById('live-presentation-btn').addEventListener('click', () => window.location.href = `view_project.html?project=${projectId}`);
 
-      // Load initial project data from Firestore
       await loadProjectFromCloud();
     });
+
+    // =========================================================================
+    // OVERLAY STATUS HELPERS
+    // =========================================================================
+    function showLoadingOverlay(msg) {
+      const el = document.getElementById('loading-overlay');
+      document.getElementById('loading-text').innerText = msg || "Loading...";
+      el.style.display = 'flex';
+      el.style.opacity = '1';
+    }
+
+    function hideLoadingOverlay() {
+      const el = document.getElementById('loading-overlay');
+      el.style.opacity = '0';
+      setTimeout(() => { el.style.display = 'none'; }, 300);
+    }
 
     // =========================================================================
     // CLIENT-SIDE IMAGE COMPRESSOR
@@ -463,47 +506,47 @@
       const sceneData = activeProjectData.scenes[activeSceneKey];
       if (!sceneData || !sceneData.image) return;
 
-      // Safely cleanup old panorama without crashing WebGL context
-      if (currentPanoObj) {
-        viewer.remove(currentPanoObj);
-        if (typeof currentPanoObj.dispose === 'function') {
-          try { currentPanoObj.dispose(); } catch(e){}
-        }
-        currentPanoObj = null;
+      showLoadingOverlay("Loading 360° Scene...");
+
+      // Instantiates or retrieves cached Panolens Panorama instance
+      if (!panoCache[activeSceneKey]) {
+        const newPano = new PANOLENS.ImagePanorama(sceneData.image);
+
+        newPano.addEventListener('load', () => {
+          hideLoadingOverlay();
+          if (viewer) viewer.onWindowResize();
+        });
+
+        newPano.addEventListener('error', (err) => {
+          hideLoadingOverlay();
+          console.error("Panorama loading error:", err);
+          alert("Could not load 360° image texture. Please check image URL.");
+        });
+
+        panoCache[activeSceneKey] = newPano;
+        viewer.add(newPano);
       }
 
-      // Instantiate new Panolens Panorama
-      currentPanoObj = new PANOLENS.ImagePanorama(sceneData.image);
-
-      currentPanoObj.addEventListener('load', () => {
-        if (viewer) viewer.onWindowResize();
-      });
-
-      currentPanoObj.addEventListener('error', (e) => {
-        console.error("Panorama texture error:", e);
-        alert("Could not render 360° image preview. Please verify image URL.");
-      });
-
-      viewer.add(currentPanoObj);
+      currentPanoObj = panoCache[activeSceneKey];
       viewer.setPanorama(currentPanoObj);
 
-      // Recalculate 3D viewport canvas across render cycles
-      requestAnimationFrame(() => {
-        if (viewer) viewer.onWindowResize();
-      });
+      // Trigger canvas resize calls after layout settles
       setTimeout(() => {
         if (viewer) viewer.onWindowResize();
-      }, 300);
+        hideLoadingOverlay();
+      }, 400);
 
       drawHotspotsToWorkspace();
       renderHotspotsManagementList();
 
-      if (sceneData.initialLook) {
+      if (sceneData.initialLook && !isNaN(sceneData.initialLook.x)) {
         const look = sceneData.initialLook;
         const targetVector = new THREE.Vector3(look.x, look.y, look.z);
         setTimeout(() => {
-          if (viewer) viewer.tweenControlCenter(targetVector, 0);
-        }, 400);
+          if (viewer && typeof viewer.tweenControlCenter === 'function') {
+            viewer.tweenControlCenter(targetVector, 0);
+          }
+        }, 500);
       }
 
       currentClickedVector = null;
@@ -520,13 +563,17 @@
     function captureDefaultViewpoint() {
       if (!viewer || !activeSceneKey) return;
 
-      const camera = viewer.getCamera();
       const target = viewer.getControlVector();
 
+      if (!target || isNaN(target.x)) {
+        alert("Unable to read camera position. Rotate room and try again.");
+        return;
+      }
+
       const lookVector = {
-        x: Math.round(target.x || camera.getWorldDirection(new THREE.Vector3()).x * 5000),
-        y: Math.round(target.y || camera.getWorldDirection(new THREE.Vector3()).y * 5000),
-        z: Math.round(target.z || camera.getWorldDirection(new THREE.Vector3()).z * 5000)
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        z: Math.round(target.z)
       };
 
       activeProjectData.scenes[activeSceneKey].initialLook = lookVector;
@@ -535,8 +582,13 @@
 
     function deleteActiveRoom() {
       if (!activeSceneKey) return;
-      
+
       if (!confirm(`Are you sure you want to delete room "${activeSceneKey}"?`)) return;
+
+      if (panoCache[activeSceneKey]) {
+        viewer.remove(panoCache[activeSceneKey]);
+        delete panoCache[activeSceneKey];
+      }
 
       delete activeProjectData.scenes[activeSceneKey];
 
@@ -550,7 +602,7 @@
       } else {
         activeProjectData.initialScene = "";
         activeSceneKey = "";
-        if (currentPanoObj) viewer.remove(currentPanoObj);
+        currentPanoObj = null;
         rebuildInterfaceDropdowns();
         renderHotspotsManagementList();
       }
@@ -584,6 +636,14 @@
     }
 
     function drawHotspotsToWorkspace() {
+      if (!currentPanoObj) return;
+
+      // Clean up previous Infospots attached to this panorama
+      if (currentPanoObj.children) {
+        const existingSpots = currentPanoObj.children.filter(c => c instanceof PANOLENS.Infospot);
+        existingSpots.forEach(spot => currentPanoObj.remove(spot));
+      }
+
       const sceneData = activeProjectData.scenes[activeSceneKey];
       if (!sceneData || !sceneData.hotspots) return;
 
@@ -663,6 +723,7 @@
     // =========================================================================
     async function loadProjectFromCloud() {
       try {
+        showLoadingOverlay("Fetching tour data from Firestore...");
         const docRef = db.collection('projects').doc(projectId);
         const docSnap = await docRef.get();
 
@@ -674,10 +735,15 @@
             switchActiveRoom(activeProjectData.initialScene);
           } else if (Object.keys(activeProjectData.scenes).length > 0) {
             switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
+          } else {
+            hideLoadingOverlay();
           }
+        } else {
+          hideLoadingOverlay();
         }
       } catch (err) {
         console.error("Error loading project from Firestore:", err);
+        hideLoadingOverlay();
       }
     }
 
@@ -688,7 +754,7 @@
 
       try {
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Save operation timed out (10s). Check Firebase Security Rules.")), 10000)
+          setTimeout(() => reject(new Error("Save operation timed out (10s). Check Firestore rules.")), 10000)
         );
 
         const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
@@ -697,11 +763,7 @@
         alert("All project changes saved to Firebase Firestore!");
       } catch (err) {
         console.error("Firestore Save Error:", err);
-        if (err.code === 'permission-denied' || (err.message && err.message.includes('permission'))) {
-          alert("Firebase Permission Denied!\n\nPlease open Firebase Console -> Firestore Database -> Rules, and change rules to:\n\nallow read, write: if true;");
-        } else {
-          alert("Save failed: " + err.message);
-        }
+        alert("Save failed: " + err.message);
       } finally {
         saveBtn.disabled = false;
         saveBtn.innerText = "Save All Changes";
