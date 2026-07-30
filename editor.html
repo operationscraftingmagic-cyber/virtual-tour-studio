@@ -254,21 +254,21 @@
 
   <script>
     // =========================================================================
-    // CONFIGURATION KEYS (REPLACE WITH YOUR ACTUAL CREDENTIALS)
+    // CONFIGURATION KEYS
     // =========================================================================
     
-    // 1. Cloudinary Credentials (NO Credit Card Required)
-    const CLOUDINARY_CLOUD_NAME = "dxfuktuw";       // e.g., "dxy123abc"
-    const CLOUDINARY_UPLOAD_PRESET = "virtualtour"; // e.g., "preset_tour123"
+    // 1. Cloudinary Credentials
+    const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
+    const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
 
     // 2. Firebase Database Credentials
     const firebaseConfig = {
-      apiKey: "YOUR_FIREBASE_API_KEY",
-      authDomain: "YOUR_PROJECT.firebaseapp.com",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_PROJECT.appspot.com",
-      messagingSenderId: "123456789",
-      appId: "YOUR_APP_ID"
+      apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
+      authDomain: "virtualtour-54c99.firebaseapp.com",
+      projectId: "virtualtour-54c99",
+      storageBucket: "virtualtour-54c99.firebasestorage.app",
+      messagingSenderId: "52412538071",
+      appId: "1:52412538071:web:eb9799ac8ebac146cbe492"
     };
 
     // Initialize Firebase
@@ -345,6 +345,36 @@
     });
 
     // =========================================================================
+    // CLIENT-SIDE IMAGE COMPRESSOR
+    // =========================================================================
+    function compressImageOnClient(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (e) => {
+          const img = new Image();
+          img.src = e.target.result;
+          img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0);
+
+            // Compress JPEG to 85% quality
+            canvas.toBlob((blob) => {
+              if (!blob) return reject(new Error("Compression failed"));
+              const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
+              resolve(compressedFile);
+            }, 'image/jpeg', 0.85);
+          };
+          img.onerror = reject;
+        };
+        reader.onerror = reject;
+      });
+    }
+
+    // =========================================================================
     // CLOUDINARY UPLOAD HANDLER
     // =========================================================================
     async function uploadAndAddScene() {
@@ -353,30 +383,31 @@
       const addBtn = document.getElementById('add-scene-btn');
 
       const rawId = rawIdInput.value.trim();
-      const file = fileInput.files[0];
+      let file = fileInput.files[0];
 
       if (!rawId || !file) {
         alert("Please provide both a Room ID and select a 360° image file.");
         return;
       }
 
-      if (CLOUDINARY_CLOUD_NAME === "YOUR_CLOUD_NAME" || CLOUDINARY_UPLOAD_PRESET === "YOUR_UNSIGNED_PRESET") {
-        alert("Please update editor.html with your actual Cloudinary Cloud Name and Upload Preset credentials.");
-        return;
-      }
-
       const cleanId = rawId.toLowerCase().replace(/[^a-z0-9]/g, '_');
       
       addBtn.disabled = true;
-      addBtn.innerText = "Uploading to Cloudinary...";
+      addBtn.innerText = "Processing Image...";
 
       try {
-        // Construct FormData payload for Cloudinary REST API
+        // Automatic client-side compression for photos > 9.5 MB
+        if (file.size > 9.5 * 1024 * 1024) {
+          addBtn.innerText = "Compressing Photo...";
+          file = await compressImageOnClient(file);
+        }
+
+        addBtn.innerText = "Uploading to Cloudinary...";
+
         const formData = new FormData();
         formData.append('file', file);
         formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
 
-        // Upload directly from browser to Cloudinary CDN
         const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
           method: 'POST',
           body: formData
@@ -425,7 +456,7 @@
 
     function renderActivePano() {
       const sceneData = activeProjectData.scenes[activeSceneKey];
-      if (!sceneData) return;
+      if (!sceneData || !sceneData.image) return;
 
       // Clear previous panorama from viewer memory
       if (currentPanoObj) {
@@ -436,8 +467,23 @@
 
       // Create new Panolens Panorama
       currentPanoObj = new PANOLENS.ImagePanorama(sceneData.image);
+
+      currentPanoObj.addEventListener('load', () => {
+        if (viewer) viewer.onWindowResize();
+      });
+
+      currentPanoObj.addEventListener('error', (e) => {
+        console.error("Panorama texture loading error:", e);
+        alert("Could not render 360° image preview. Please check image URL or format.");
+      });
+
       viewer.add(currentPanoObj);
       viewer.setPanorama(currentPanoObj);
+
+      // Recalculate 3D viewport canvas size to prevent black preview screen
+      setTimeout(() => {
+        if (viewer) viewer.onWindowResize();
+      }, 150);
 
       // Render existing hotspots for this room
       drawHotspotsToWorkspace();
@@ -448,7 +494,7 @@
         const look = sceneData.initialLook;
         const targetVector = new THREE.Vector3(look.x, look.y, look.z);
         setTimeout(() => {
-          viewer.tweenControlCenter(targetVector, 0);
+          if (viewer) viewer.tweenControlCenter(targetVector, 0);
         }, 300);
       }
 
@@ -461,7 +507,7 @@
     function setStartRoom() {
       if (!activeSceneKey) return;
       activeProjectData.initialScene = activeSceneKey;
-      alert(`"Room [${activeSceneKey}] set as initial starting scene.`);
+      alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
     function captureDefaultViewpoint() {
@@ -535,7 +581,7 @@
       const sceneData = activeProjectData.scenes[activeSceneKey];
       if (!sceneData || !sceneData.hotspots) return;
 
-      sceneData.hotspots.forEach((spot, idx) => {
+      sceneData.hotspots.forEach((spot) => {
         const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Arrow);
         infospot.position.set(spot.pitch, spot.yaw, spot.distance);
         infospot.addHoverText(`Portal to: ${spot.targetScene}`);
@@ -610,7 +656,14 @@
     // =========================================================================
     // CLOUD DATABASE FIRESTORE SYNC
     // =========================================================================
+    function isFirebaseConfigured() {
+      return firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" && 
+             firebaseConfig.projectId !== "YOUR_PROJECT_ID";
+    }
+
     async function loadProjectFromCloud() {
+      if (!isFirebaseConfigured()) return;
+
       try {
         const docRef = db.collection('projects').doc(projectId);
         const docSnap = await docRef.get();
@@ -634,11 +687,22 @@
 
     async function saveProjectToCloud() {
       const saveBtn = document.getElementById('cloud-save-btn');
+
+      if (!isFirebaseConfigured()) {
+        alert("Please update editor.html with your actual Firebase credentials!");
+        return;
+      }
+
       saveBtn.disabled = true;
       saveBtn.innerText = "Saving...";
 
       try {
-        await db.collection('projects').doc(projectId).set(activeProjectData);
+        const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
+        const timeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error("Connection timed out. Please check your internet connection or Firestore Rules.")), 10000)
+        );
+
+        await Promise.race([savePromise, timeoutPromise]);
         alert("All project changes saved to Firebase Firestore!");
       } catch (err) {
         console.error("Firestore Save Error:", err);
