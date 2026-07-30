@@ -9,7 +9,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r105/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panolens@0.12.1/build/panolens.min.js"></script>
   
-  <!-- Firebase SDKs (100% Free Firestore Database) -->
+  <!-- Firebase SDKs -->
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
   <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
@@ -49,11 +49,14 @@
       flex: 1;
       height: calc(100vh - 55px);
       position: relative;
+      width: 100%;
     }
     #viewer-canvas {
       flex: 1;
       height: 100%;
+      width: 100%;
       background-color: #000;
+      position: relative;
     }
     #control-panel {
       width: 380px;
@@ -298,20 +301,26 @@
     window.addEventListener('DOMContentLoaded', async () => {
       const container = document.getElementById('viewer-canvas');
 
-      // Initialize Panolens Viewer with persistent hotspots
+      // Initialize Panolens Viewer
       viewer = new PANOLENS.Viewer({
         container: container,
-        autoHideInfospot: false, // Prevents hotspots from disappearing on click
+        autoHideInfospot: false,
         controlBar: true
+      });
+
+      // Handle window resizing automatically
+      window.addEventListener('resize', () => {
+        if (viewer) viewer.onWindowResize();
       });
 
       // Capture Clicked 3D Coordinates on Panolens Sphere
       container.addEventListener('click', (event) => {
         if (!viewer || !currentPanoObj) return;
-        
+
+        const rect = container.getBoundingClientRect();
         const mouse = new THREE.Vector2(
-          (event.clientX / container.clientWidth) * 2 - 1,
-          -(event.clientY / container.clientHeight) * 2 + 1
+          ((event.clientX - rect.left) / container.clientWidth) * 2 - 1,
+          -((event.clientY - rect.top) / container.clientHeight) * 2 + 1
         );
 
         const raycaster = new THREE.Raycaster();
@@ -320,7 +329,6 @@
 
         if (intersects.length > 0) {
           const pt = intersects[0].point;
-          // Invert X coordinate for Panolens sphere mapping alignment
           currentClickedVector = new THREE.Vector3(-Math.round(pt.x), Math.round(pt.y), Math.round(pt.z));
           
           document.getElementById('click-coords').innerText = 
@@ -361,7 +369,6 @@
             const ctx = canvas.getContext('2d');
             ctx.drawImage(img, 0, 0);
 
-            // Compress JPEG to 85% quality
             canvas.toBlob((blob) => {
               if (!blob) return reject(new Error("Compression failed"));
               const compressedFile = new File([blob], file.name, { type: 'image/jpeg' });
@@ -396,7 +403,6 @@
       addBtn.innerText = "Processing Image...";
 
       try {
-        // Automatic client-side compression for photos > 9.5 MB
         if (file.size > 9.5 * 1024 * 1024) {
           addBtn.innerText = "Compressing Photo...";
           file = await compressImageOnClient(file);
@@ -418,7 +424,6 @@
 
         const downloadURL = data.secure_url;
 
-        // Save new scene into local state
         activeProjectData.scenes[cleanId] = {
           image: downloadURL,
           hotspots: []
@@ -458,14 +463,16 @@
       const sceneData = activeProjectData.scenes[activeSceneKey];
       if (!sceneData || !sceneData.image) return;
 
-      // Clear previous panorama from viewer memory
+      // Safely cleanup old panorama without crashing WebGL context
       if (currentPanoObj) {
         viewer.remove(currentPanoObj);
-        currentPanoObj.dispose();
+        if (typeof currentPanoObj.dispose === 'function') {
+          try { currentPanoObj.dispose(); } catch(e){}
+        }
         currentPanoObj = null;
       }
 
-      // Create new Panolens Panorama
+      // Instantiate new Panolens Panorama
       currentPanoObj = new PANOLENS.ImagePanorama(sceneData.image);
 
       currentPanoObj.addEventListener('load', () => {
@@ -473,32 +480,32 @@
       });
 
       currentPanoObj.addEventListener('error', (e) => {
-        console.error("Panorama texture loading error:", e);
-        alert("Could not render 360° image preview. Please check image URL or format.");
+        console.error("Panorama texture error:", e);
+        alert("Could not render 360° image preview. Please verify image URL.");
       });
 
       viewer.add(currentPanoObj);
       viewer.setPanorama(currentPanoObj);
 
-      // Recalculate 3D viewport canvas size to prevent black preview screen
+      // Recalculate 3D viewport canvas across render cycles
+      requestAnimationFrame(() => {
+        if (viewer) viewer.onWindowResize();
+      });
       setTimeout(() => {
         if (viewer) viewer.onWindowResize();
-      }, 150);
+      }, 300);
 
-      // Render existing hotspots for this room
       drawHotspotsToWorkspace();
       renderHotspotsManagementList();
 
-      // Apply initial view angle if saved
       if (sceneData.initialLook) {
         const look = sceneData.initialLook;
         const targetVector = new THREE.Vector3(look.x, look.y, look.z);
         setTimeout(() => {
           if (viewer) viewer.tweenControlCenter(targetVector, 0);
-        }, 300);
+        }, 400);
       }
 
-      // Reset selection state
       currentClickedVector = null;
       document.getElementById('click-coords').innerText = "Click photo to select";
       document.getElementById('add-hotspot-btn').disabled = true;
@@ -573,7 +580,6 @@
       }
 
       activeProjectData.scenes[activeSceneKey].hotspots.push(newHotspot);
-
       renderActivePano();
     }
 
@@ -586,7 +592,6 @@
         infospot.position.set(spot.pitch, spot.yaw, spot.distance);
         infospot.addHoverText(`Portal to: ${spot.targetScene}`);
 
-        // Click handler inside editor view
         infospot.addEventListener('click', () => {
           switchActiveRoom(spot.targetScene);
         });
@@ -656,14 +661,7 @@
     // =========================================================================
     // CLOUD DATABASE FIRESTORE SYNC
     // =========================================================================
-    function isFirebaseConfigured() {
-      return firebaseConfig.apiKey !== "YOUR_FIREBASE_API_KEY" && 
-             firebaseConfig.projectId !== "YOUR_PROJECT_ID";
-    }
-
     async function loadProjectFromCloud() {
-      if (!isFirebaseConfigured()) return;
-
       try {
         const docRef = db.collection('projects').doc(projectId);
         const docSnap = await docRef.get();
@@ -677,8 +675,6 @@
           } else if (Object.keys(activeProjectData.scenes).length > 0) {
             switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
           }
-        } else {
-          console.log("No existing project found in Firestore. Creating blank project.");
         }
       } catch (err) {
         console.error("Error loading project from Firestore:", err);
@@ -687,26 +683,25 @@
 
     async function saveProjectToCloud() {
       const saveBtn = document.getElementById('cloud-save-btn');
-
-      if (!isFirebaseConfigured()) {
-        alert("Please update editor.html with your actual Firebase credentials!");
-        return;
-      }
-
       saveBtn.disabled = true;
       saveBtn.innerText = "Saving...";
 
       try {
-        const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
         const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Connection timed out. Please check your internet connection or Firestore Rules.")), 10000)
+          setTimeout(() => reject(new Error("Save operation timed out (10s). Check Firebase Security Rules.")), 10000)
         );
+
+        const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
 
         await Promise.race([savePromise, timeoutPromise]);
         alert("All project changes saved to Firebase Firestore!");
       } catch (err) {
         console.error("Firestore Save Error:", err);
-        alert("Failed to save to cloud: " + err.message);
+        if (err.code === 'permission-denied' || (err.message && err.message.includes('permission'))) {
+          alert("Firebase Permission Denied!\n\nPlease open Firebase Console -> Firestore Database -> Rules, and change rules to:\n\nallow read, write: if true;");
+        } else {
+          alert("Save failed: " + err.message);
+        }
       } finally {
         saveBtn.disabled = false;
         saveBtn.innerText = "Save All Changes";
