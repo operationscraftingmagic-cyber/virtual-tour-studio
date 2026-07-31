@@ -349,7 +349,7 @@
         if (viewer) viewer.onWindowResize();
       });
 
-      // Capture Clicked 3D Coordinates via Raycaster
+      // Capture Clicked 3D Coordinates via Raycaster & Focus Camera
       container.addEventListener('click', (event) => {
         if (!viewer || !currentPanoObj) return;
 
@@ -368,6 +368,11 @@
           const pt = intersects[0].point;
           currentClickedVector = new THREE.Vector3(-Math.round(pt.x), Math.round(pt.y), Math.round(pt.z));
           
+          // Smoothly rotate camera to center on the clicked point
+          if (typeof viewer.tweenControlCenter === 'function') {
+            viewer.tweenControlCenter(currentClickedVector, 1000);
+          }
+
           document.getElementById('click-coords').innerText = 
             `X: ${currentClickedVector.x}, Y: ${currentClickedVector.y}, Z: ${currentClickedVector.z}`;
           
@@ -543,55 +548,54 @@
       alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
-function captureDefaultViewpoint() {
-  if (!activeSceneKey || !activeProjectData.scenes[activeSceneKey]) {
-    alert("Please select a room first.");
-    return;
-  }
+    function captureDefaultViewpoint() {
+      if (!activeSceneKey || !activeProjectData.scenes[activeSceneKey]) {
+        alert("Please select a room first.");
+        return;
+      }
 
-  let target = null;
+      let target = currentClickedVector;
 
-  // 1. Primary Method: Panolens native center raycaster
-  if (typeof viewer.getRaycastViewCenter === 'function') {
-    target = viewer.getRaycastViewCenter();
-  }
+      // Fallback 1: Panolens native center raycaster
+      if (!target || isNaN(target.x)) {
+        if (typeof viewer.getRaycastViewCenter === 'function') {
+          target = viewer.getRaycastViewCenter();
+        }
+      }
 
-  // 2. Fallback Method: Three.js Camera World Direction
-  if (!target || isNaN(target.x)) {
-    if (viewer.getCamera && viewer.getCamera()) {
-      const camera = viewer.getCamera();
-      const dir = new THREE.Vector3();
-      camera.getWorldDirection(dir);
-      // Panolens default sphere radius is 5000 units
-      target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
+      // Fallback 2: Three.js Camera World Direction
+      if (!target || isNaN(target.x)) {
+        if (viewer.getCamera && viewer.getCamera()) {
+          const camera = viewer.getCamera();
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
+        }
+      }
+
+      // Final validation check
+      if (!target || isNaN(target.x)) {
+        alert("Please click anywhere on the 360° photo to choose the view angle first.");
+        return;
+      }
+
+      // Round coordinates to clean integers
+      const newViewpoint = {
+        x: Math.round(target.x),
+        y: Math.round(target.y),
+        z: Math.round(target.z)
+      };
+
+      // Save initial view angle to active project data
+      activeProjectData.scenes[activeSceneKey].initialLook = newViewpoint;
+
+      // Animate camera center to confirm selection
+      if (viewer && typeof viewer.tweenControlCenter === 'function') {
+        viewer.tweenControlCenter(new THREE.Vector3(newViewpoint.x, newViewpoint.y, newViewpoint.z), 800);
+      }
+
+      alert(`Saved default view angle for [${activeSceneKey}]: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`);
     }
-  }
-
-  // 3. Fallback Method: Control Target
-  if (!target || isNaN(target.x)) {
-    if (viewer.getControl && viewer.getControl().target) {
-      target = viewer.getControl().target;
-    }
-  }
-
-  // Final validation check
-  if (!target || isNaN(target.x)) {
-    alert("Could not detect camera direction. Try moving the room view slightly.");
-    return;
-  }
-
-  // Round coordinates to clean integers
-  const newViewpoint = {
-    x: Math.round(target.x),
-    y: Math.round(target.y),
-    z: Math.round(target.z)
-  };
-
-  // Save initial camera view angle to active project data
-  activeProjectData.scenes[activeSceneKey].initialLook = newViewpoint;
-
-  alert(`Saved default view angle for [${activeSceneKey}]: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`);
-}
 
     function deleteActiveRoom() {
       if (!activeSceneKey) return;
@@ -789,6 +793,7 @@ function captureDefaultViewpoint() {
       } catch (err) {
         console.error("Firestore Save Error:", err);
         alert("Save failed: " + err.message);
+      } font-weight: bold;
       } finally {
         saveBtn.disabled = false;
         saveBtn.innerText = "Save All Changes";
