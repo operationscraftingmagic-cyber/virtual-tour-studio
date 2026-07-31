@@ -776,29 +776,28 @@
       }
     }
 
-    async function saveProjectToCloud() {
-      const saveBtn = document.getElementById('cloud-save-btn');
-      saveBtn.disabled = true;
-      saveBtn.innerText = "Saving...";
-
-      try {
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error("Save operation timed out (10s). Check network or Firestore Security Rules.")), 10000)
-        );
-
-        const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
-
-        await Promise.race([savePromise, timeoutPromise]);
-        alert("All project changes saved to Firebase Firestore!");
-      } catch (err) {
-        console.error("Firestore Save Error:", err);
-        alert("Save failed: " + err.message);
-      } font-weight: bold;
-      } finally {
-        saveBtn.disabled = false;
-        saveBtn.innerText = "Save All Changes";
-      }
+  async function saveProjectToCloud() {
+    const saveBtn = document.getElementById('cloud-save-btn');
+    saveBtn.disabled = true;
+    saveBtn.innerText = "Saving...";
+  
+    try {
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error("Save operation timed out (10s). Check network or Firestore Security Rules.")), 10000)
+      );
+  
+      const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
+  
+      await Promise.race([savePromise, timeoutPromise]);
+      alert("All project changes saved to Firebase Firestore!");
+    } catch (err) {
+      console.error("Firestore Save Error:", err);
+      alert("Save failed: " + err.message);
+    } finally {
+      saveBtn.disabled = false;
+      saveBtn.innerText = "Save All Changes";
     }
+  }
   </script>
 </body>
 </html>
