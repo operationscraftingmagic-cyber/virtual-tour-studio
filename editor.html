@@ -581,9 +581,9 @@
 
       // Round coordinates to clean integers
       const newViewpoint = {
-        x: -Math.round(target.x),
+        x: Math.round(target.x),
         y: Math.round(target.y),
-        z: Math.round(target.z)
+        z: -Math.round(target.z)
       };
 
       // Save initial view angle to active project data
