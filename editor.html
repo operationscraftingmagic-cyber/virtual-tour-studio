@@ -3,20 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>360° Virtual Tour Editor</title>
+  <title>Panolens 360 Viewer - Hotspot & Camera Fix</title>
 
-  <!-- Node.js 'process' Polyfill for Browser Compatibility -->
-  <script>
-    window.process = { env: { NODE_ENV: 'production' } };
-  </script>
-
-  <!-- Core Libraries -->
+  <!-- Three.js and Panolens CDNs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r105/three.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/panolens@0.12.1/build/panolens.min.js"></script>
-  
-  <!-- Firebase SDKs -->
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
   <style>
     * {
@@ -24,332 +15,135 @@
       margin: 0;
       padding: 0;
     }
+
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: #121212;
-      color: #e0e0e0;
-      display: flex;
-      flex-direction: column;
+      background-color: #111827;
+      color: #ffffff;
+      overflow: hidden;
+    }
+
+    #container {
+      width: 100vw;
       height: 100vh;
-      overflow: hidden;
-    }
-    header {
-      background-color: #1e1e1e;
-      padding: 12px 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #333;
-      z-index: 10;
-    }
-    header h1 {
-      font-size: 1.1rem;
-      color: #00e676;
-    }
-    .header-btns {
-      display: flex;
-      gap: 10px;
-    }
-    #editor-container {
-      display: flex;
-      flex: 1;
-      height: calc(100vh - 55px);
-      position: relative;
-      width: 100%;
-      overflow: hidden;
-    }
-    #viewer-canvas {
-      flex: 1;
-      height: 100%;
-      width: 100%;
-      background-color: #000;
-      position: relative;
-    }
-    /* Enforce canvas sizing */
-    #viewer-canvas canvas {
-      width: 100% !important;
-      height: 100% !important;
       position: absolute;
       top: 0;
       left: 0;
-      outline: none;
     }
-    #loading-overlay {
+
+    #ui-panel {
       position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background: rgba(0,0,0,0.85);
-      color: #00e676;
-      font-size: 1.1rem;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      z-index: 50;
-      pointer-events: none;
-      transition: opacity 0.3s ease;
-    }
-    #control-panel {
-      width: 380px;
-      background-color: #181818;
-      border-left: 1px solid #2e2e2e;
-      padding: 20px;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
+      top: 20px;
+      left: 20px;
       z-index: 10;
-    }
-    .panel-section {
-      background-color: #222;
-      padding: 15px;
-      border-radius: 8px;
-      border: 1px solid #333;
-    }
-    .panel-section h3 {
-      font-size: 0.9rem;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: #888;
-      margin-bottom: 12px;
-    }
-    .input-group {
+      background: rgba(17, 24, 39, 0.85);
+      backdrop-filter: blur(10px);
+      padding: 18px 22px;
+      border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
       display: flex;
       flex-direction: column;
-      gap: 6px;
-      margin-bottom: 12px;
+      gap: 12px;
+      width: 320px;
     }
-    label {
-      font-size: 0.8rem;
-      color: #aaa;
+
+    h3 {
+      font-size: 16px;
+      font-weight: 600;
+      color: #f9fafb;
     }
-    input[type="text"], input[type="file"], select {
-      background-color: #121212;
-      border: 1px solid #3a3a3a;
-      color: #fff;
-      padding: 8px 12px;
-      border-radius: 4px;
-      font-size: 0.9rem;
-      width: 100%;
+
+    .coords-display {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 13px;
+      background: rgba(0, 0, 0, 0.3);
+      padding: 10px 12px;
+      border-radius: 6px;
+      color: #38bdf8;
+      border: 1px solid rgba(56, 189, 248, 0.2);
     }
-    input[type="file"] {
-      padding: 6px;
-      cursor: pointer;
+
+    .btn-group {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
     }
+
     button {
-      background-color: #2979ff;
-      color: white;
+      background-color: #2563eb;
+      color: #ffffff;
       border: none;
       padding: 10px 14px;
-      border-radius: 4px;
-      font-weight: 600;
+      font-size: 13px;
+      font-weight: 500;
+      border-radius: 6px;
       cursor: pointer;
-      transition: background 0.2s;
-      width: 100%;
+      transition: background-color 0.2s ease, opacity 0.2s ease;
     }
-    button:hover {
-      background-color: #1565c0;
+
+    button:hover:not(:disabled) {
+      background-color: #1d4ed8;
     }
-    button.secondary {
-      background-color: #333;
-      color: #ccc;
-    }
-    button.secondary:hover {
-      background-color: #444;
-    }
-    button.danger {
-      background-color: #d32f2f;
-    }
-    button.danger:hover {
-      background-color: #9a0007;
-    }
-    button.success {
-      background-color: #00c853;
-    }
-    button.success:hover {
-      background-color: #009624;
-    }
+
     button:disabled {
-      background-color: #444;
+      background-color: #374151;
+      color: #9ca3af;
       cursor: not-allowed;
       opacity: 0.6;
-    }
-    .hotspot-list {
-      list-style: none;
-      margin-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-    .hotspot-item {
-      background-color: #1a1a1a;
-      padding: 8px 10px;
-      border-radius: 4px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.85rem;
-      border: 1px solid #2a2a2a;
-    }
-    .hotspot-item button {
-      width: auto;
-      padding: 4px 8px;
-      font-size: 0.75rem;
-    }
-    .coord-badge {
-      font-family: monospace;
-      font-size: 0.8rem;
-      color: #ffb74d;
-      background: #2a2010;
-      padding: 4px 8px;
-      border-radius: 4px;
-      display: inline-block;
-      margin-bottom: 8px;
-    }
-    .row {
-      display: flex;
-      gap: 8px;
     }
   </style>
 </head>
 <body>
 
-  <header>
-    <h1>Virtual Tour Studio (Editor)</h1>
-    <div class="header-btns">
-      <button class="secondary" id="back-dashboard-btn" style="width:auto;">Dashboard</button>
-      <button class="secondary" id="live-presentation-btn" style="width:auto;">Preview Tour</button>
-      <button class="success" id="cloud-save-btn" style="width:auto;">Save All Changes</button>
-    </div>
-  </header>
+  <div id="container"></div>
 
-  <div id="editor-container">
-    <!-- 360 Canvas -->
-    <div id="viewer-canvas">
-      <div id="loading-overlay" style="display:none;">
-        <span id="loading-text">Loading 360° Scene...</span>
-      </div>
-    </div>
-
-    <!-- Control Panel -->
-    <div id="control-panel">
-
-      <!-- SECTION 1: ADD NEW ROOM -->
-      <div class="panel-section">
-        <h3>1. Add New Room Scene</h3>
-        <div class="input-group">
-          <label for="scene-id-input">Room ID (e.g. living_room):</label>
-          <input type="text" id="scene-id-input" placeholder="living_room">
-        </div>
-        <div class="input-group">
-          <label for="scene-file-input">360° Panorama Image File:</label>
-          <input type="file" id="scene-file-input" accept="image/jpeg, image/png">
-        </div>
-        <button id="add-scene-btn" onclick="uploadAndAddScene()">Upload & Add Room</button>
-      </div>
-
-      <!-- SECTION 2: ACTIVE ROOM MANAGEMENT -->
-      <div class="panel-section">
-        <h3>2. Active Room Settings</h3>
-        <div class="input-group">
-          <label for="scene-selector">Select Active Editing Room:</label>
-          <select id="scene-selector"></select>
-        </div>
-        
-        <div class="row" style="margin-bottom: 8px;">
-          <button class="secondary" id="set-start-scene-btn">Set as Start Room</button>
-          <button class="secondary" id="set-default-view-btn">Save View Angle</button>
-        </div>
-
-        <div class="row">
-          <button class="danger" id="delete-scene-btn">Delete Active Room</button>
-        </div>
-      </div>
-
-      <!-- SECTION 3: CREATE HOTSPOT -->
-      <div class="panel-section">
-        <h3>3. Place Portal Hotspot</h3>
-        <p style="font-size:0.8rem; color:#aaa; margin-bottom:10px;">
-          Click anywhere on the 360° photo to set portal target position.
-        </p>
-        <div>Selected Target: <span id="click-coords" class="coord-badge">Click photo to select</span></div>
-        
-        <div class="input-group">
-          <label for="target-scene-selector">Target Destination Room:</label>
-          <select id="target-scene-selector"></select>
-        </div>
-        
-        <button id="add-hotspot-btn" disabled>Add Navigation Portal</button>
-      </div>
-
-      <!-- SECTION 4: EXISTING HOTSPOTS -->
-      <div class="panel-section">
-        <h3>4. Portals in this Room</h3>
-        <ul id="hotspots-list" class="hotspot-list"></ul>
-      </div>
-
+  <div id="ui-panel">
+    <h3>Hotspot & View Control</h3>
+    <div id="click-coords" class="coords-display">Click anywhere on the panorama...</div>
+    
+    <div class="btn-group">
+      <button id="add-hotspot-btn" disabled onclick="addHotspotAtClick()">Add Hotspot at Clicked Point</button>
+      <button id="capture-viewpoint-btn" onclick="captureDefaultViewpoint()">Save Default View Angle</button>
     </div>
   </div>
 
   <script>
-    // =========================================================================
-    // CONFIGURATION KEYS
-    // =========================================================================
-    
-    const CLOUDINARY_CLOUD_NAME = "dxfuktuw";
-    const CLOUDINARY_UPLOAD_PRESET = "virtualtour";
-
-    const firebaseConfig = {
-      apiKey: "AIzaSyDh-u_fBujEDL2qJoypFrMyvYzhIeUDuWY",
-      authDomain: "virtualtour-54c99.firebaseapp.com",
-      projectId: "virtualtour-54c99",
-      storageBucket: "virtualtour-54c99.firebasestorage.app",
-      messagingSenderId: "52412538071",
-      appId: "1:52412538071:web:eb9799ac8ebac146cbe492"
-    };
-
-    if (!firebase.apps.length) {
-      firebase.initializeApp(firebaseConfig);
-    }
-    const db = firebase.firestore();
-
-    // Force Long-Polling to bypass WebSocket/gRPC 10s backend connection timeouts
-    db.settings({ 
-      experimentalForceLongPolling: true 
-    });
-
-    const urlParams = new URLSearchParams(window.location.search);
-    const projectId = urlParams.get('project') || 'demo_tour';
-
-    let activeProjectData = {
-      initialScene: "",
-      scenes: {}
-    };
-
-    let activeSceneKey = "";
-    let viewer = null;
-    let currentPanoObj = null;
+    let viewer, currentPanoObj;
     let currentClickedVector = null;
-    const panoCache = {};
+    let activeSceneKey = "room1";
 
-    // =========================================================================
-    // INITIALIZATION
-    // =========================================================================
-    window.addEventListener('DOMContentLoaded', async () => {
-      const container = document.getElementById('viewer-canvas');
+    // Project data model
+    const activeProjectData = {
+      scenes: {
+        room1: {
+          image: "https://p3d.in/img/demo.jpg", // Replace with your equirectangular image URL or local path
+          initialLook: null,
+          hotspots: []
+        }
+      }
+    };
 
+    const container = document.getElementById('container');
+
+    function initPanorama() {
+      // Initialize Panolens Viewer
       viewer = new PANOLENS.Viewer({
         container: container,
-        autoHideInfospot: false,
+        autoRotate: false,
         controlBar: true
       });
 
-      window.addEventListener('resize', () => {
-        if (viewer) viewer.onWindowResize();
-      });
+      const scene = activeProjectData.scenes[activeSceneKey];
+      currentPanoObj = new PANOLENS.ImagePanorama(scene.image);
 
-      // Capture Clicked 3D Coordinates via Raycaster & Focus Camera
+      viewer.add(currentPanoObj);
+
+      // Attach the Raycaster click event listener
+      setupClickListener();
+    }
+
+    function setupClickListener() {
       container.addEventListener('click', (event) => {
         if (!viewer || !currentPanoObj) return;
 
@@ -361,191 +155,48 @@
 
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera(mouse, viewer.getCamera());
-        
+
         const intersects = raycaster.intersectObject(currentPanoObj, true);
 
         if (intersects.length > 0) {
           const pt = intersects[0].point;
+
+          // 1. Local coordinates for Infospots inside currentPanoObj 
+          // (X negated to balance Panolens internal sphere scaling)
           currentClickedVector = new THREE.Vector3(-Math.round(pt.x), Math.round(pt.y), Math.round(pt.z));
-          
-          // Smoothly rotate camera to center on the clicked point
+
+          // 2. World coordinates for Camera target (unflipped point)
+          const worldPoint = new THREE.Vector3(Math.round(pt.x), Math.round(pt.y), Math.round(pt.z));
+
+          // Rotate camera smoothly to face the clicked point in World space
           if (typeof viewer.tweenControlCenter === 'function') {
-            viewer.tweenControlCenter(currentClickedVector, 1000);
+            viewer.tweenControlCenter(worldPoint, 1000);
           }
 
-          document.getElementById('click-coords').innerText = 
+          document.getElementById('click-coords').innerText =
             `X: ${currentClickedVector.x}, Y: ${currentClickedVector.y}, Z: ${currentClickedVector.z}`;
-          
+
           document.getElementById('add-hotspot-btn').disabled = false;
         }
       });
+    }
 
-      // UI Button Bindings
-      document.getElementById('scene-selector').addEventListener('change', (e) => switchActiveRoom(e.target.value));
-      document.getElementById('set-start-scene-btn').addEventListener('click', setStartRoom);
-      document.getElementById('set-default-view-btn').addEventListener('click', captureDefaultViewpoint);
-      document.getElementById('add-hotspot-btn').addEventListener('click', addHotspotToRoom);
-      document.getElementById('delete-scene-btn').addEventListener('click', deleteActiveRoom);
-      document.getElementById('cloud-save-btn').addEventListener('click', saveProjectToCloud);
-      document.getElementById('back-dashboard-btn').addEventListener('click', () => window.location.href = 'dashboard.html');
-      document.getElementById('live-presentation-btn').addEventListener('click', () => window.location.href = `view_project.html?project=${projectId}`);
+    function addHotspotAtClick() {
+      if (!currentClickedVector) return;
 
-      await loadProjectFromCloud();
-    });
+      const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Info);
+      infospot.position.copy(currentClickedVector);
+      infospot.addHoverText("Hotspot");
 
-    // =========================================================================
-    // HELPER: PRELOAD PANORAMA IMAGE (Prevents texImage2D error)
-    // =========================================================================
-    function preloadImage(url) {
-      return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => resolve(img);
-        img.onerror = () => reject(new Error("Image failed to load or cross-origin policy blocked access."));
-        img.src = url;
+      currentPanoObj.add(infospot);
+
+      activeProjectData.scenes[activeSceneKey].hotspots.push({
+        x: currentClickedVector.x,
+        y: currentClickedVector.y,
+        z: currentClickedVector.z
       });
-    }
 
-    function showLoadingOverlay(msg) {
-      const el = document.getElementById('loading-overlay');
-      document.getElementById('loading-text').innerText = msg || "Loading...";
-      el.style.display = 'flex';
-      el.style.opacity = '1';
-    }
-
-    function hideLoadingOverlay() {
-      const el = document.getElementById('loading-overlay');
-      el.style.opacity = '0';
-      setTimeout(() => { el.style.display = 'none'; }, 300);
-    }
-
-    // =========================================================================
-    // CLOUDINARY UPLOAD HANDLER
-    // =========================================================================
-    async function uploadAndAddScene() {
-      const fileInput = document.getElementById('scene-file-input');
-      const rawIdInput = document.getElementById('scene-id-input');
-      const addBtn = document.getElementById('add-scene-btn');
-
-      const rawId = rawIdInput.value.trim();
-      let file = fileInput.files[0];
-
-      if (!rawId || !file) {
-        alert("Please provide both a Room ID and select a 360° image file.");
-        return;
-      }
-
-      const cleanId = rawId.toLowerCase().replace(/[^a-z0-9]/g, '_');
-      
-      addBtn.disabled = true;
-      addBtn.innerText = "Uploading to Cloudinary...";
-
-      try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-
-        const res = await fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-          method: 'POST',
-          body: formData
-        });
-
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error?.message || "Upload failed");
-
-        const downloadURL = data.secure_url;
-
-        activeProjectData.scenes[cleanId] = {
-          image: downloadURL,
-          hotspots: []
-        };
-
-        if (!activeProjectData.initialScene) {
-          activeProjectData.initialScene = cleanId;
-        }
-
-        rebuildInterfaceDropdowns();
-        switchActiveRoom(cleanId);
-
-        rawIdInput.value = '';
-        fileInput.value = '';
-        alert("Room uploaded and added successfully!");
-
-      } catch (error) {
-        console.error("Cloudinary upload error:", error);
-        alert("Upload failed: " + error.message);
-      } finally {
-        addBtn.disabled = false;
-        addBtn.innerText = "Upload & Add Room";
-      }
-    }
-
-    // =========================================================================
-    // ROOM & PANORAMA MANAGEMENT
-    // =========================================================================
-    function switchActiveRoom(roomKey) {
-      if (!activeProjectData.scenes[roomKey]) return;
-      activeSceneKey = roomKey;
-      document.getElementById('scene-selector').value = roomKey;
-      renderActivePano();
-    }
-
-    async function renderActivePano() {
-      const sceneData = activeProjectData.scenes[activeSceneKey];
-      if (!sceneData || !sceneData.image) return;
-
-      showLoadingOverlay("Preloading 360° Image...");
-
-      try {
-        if (!panoCache[activeSceneKey]) {
-          const loadedImg = await preloadImage(sceneData.image);
-          const newPano = new PANOLENS.ImagePanorama(loadedImg.src);
-
-          newPano.addEventListener('load', () => {
-            hideLoadingOverlay();
-            if (viewer) viewer.onWindowResize();
-          });
-
-          panoCache[activeSceneKey] = newPano;
-          viewer.add(newPano);
-        }
-
-        currentPanoObj = panoCache[activeSceneKey];
-        viewer.setPanorama(currentPanoObj);
-
-        setTimeout(() => {
-          if (viewer) viewer.onWindowResize();
-          hideLoadingOverlay();
-        }, 300);
-
-        drawHotspotsToWorkspace();
-        renderHotspotsManagementList();
-
-        if (sceneData.initialLook && !isNaN(sceneData.initialLook.x)) {
-          const look = sceneData.initialLook;
-          const targetVector = new THREE.Vector3(look.x, look.y, look.z);
-          setTimeout(() => {
-            if (viewer && typeof viewer.tweenControlCenter === 'function') {
-              viewer.tweenControlCenter(targetVector, 0);
-            }
-          }, 400);
-        }
-
-      } catch (err) {
-        hideLoadingOverlay();
-        console.error("Panorama rendering error:", err);
-        alert("Could not load image: " + err.message);
-      }
-
-      currentClickedVector = null;
-      document.getElementById('click-coords').innerText = "Click photo to select";
-      document.getElementById('add-hotspot-btn').disabled = true;
-    }
-
-    function setStartRoom() {
-      if (!activeSceneKey) return;
-      activeProjectData.initialScene = activeSceneKey;
-      alert(`Room [${activeSceneKey}] set as initial starting scene.`);
+      console.log("Hotspot positioned locally at:", currentClickedVector);
     }
 
     function captureDefaultViewpoint() {
@@ -554,42 +205,33 @@
         return;
       }
 
-      let target = currentClickedVector;
+      let target = null;
 
-      // Fallback 1: Panolens native center raycaster
-      if (!target || isNaN(target.x)) {
-        if (typeof viewer.getRaycastViewCenter === 'function') {
-          target = viewer.getRaycastViewCenter();
-        }
+      // Convert local clicked vector back to World Space for camera target calculation
+      if (currentClickedVector) {
+        target = new THREE.Vector3(-currentClickedVector.x, currentClickedVector.y, currentClickedVector.z);
+      } else if (typeof viewer.getRaycastViewCenter === 'function') {
+        target = viewer.getRaycastViewCenter();
+      } else if (viewer.getCamera && viewer.getCamera()) {
+        const camera = viewer.getCamera();
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
       }
 
-      // Fallback 2: Three.js Camera World Direction
-      if (!target || isNaN(target.x)) {
-        if (viewer.getCamera && viewer.getCamera()) {
-          const camera = viewer.getCamera();
-          const dir = new THREE.Vector3();
-          camera.getWorldDirection(dir);
-          target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
-        }
-      }
-
-      // Final validation check
       if (!target || isNaN(target.x)) {
         alert("Please click anywhere on the 360° photo to choose the view angle first.");
         return;
       }
 
-      // Round coordinates to clean integers
       const newViewpoint = {
         x: Math.round(target.x),
         y: Math.round(target.y),
-        z: -Math.round(target.z)
+        z: Math.round(target.z)
       };
 
-      // Save initial view angle to active project data
       activeProjectData.scenes[activeSceneKey].initialLook = newViewpoint;
 
-      // Animate camera center to confirm selection
       if (viewer && typeof viewer.tweenControlCenter === 'function') {
         viewer.tweenControlCenter(new THREE.Vector3(newViewpoint.x, newViewpoint.y, newViewpoint.z), 800);
       }
@@ -597,207 +239,7 @@
       alert(`Saved default view angle for [${activeSceneKey}]: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`);
     }
 
-    function deleteActiveRoom() {
-      if (!activeSceneKey) return;
-
-      if (!confirm(`Are you sure you want to delete room "${activeSceneKey}"?`)) return;
-
-      if (panoCache[activeSceneKey]) {
-        viewer.remove(panoCache[activeSceneKey]);
-        delete panoCache[activeSceneKey];
-      }
-
-      delete activeProjectData.scenes[activeSceneKey];
-
-      const remainingKeys = Object.keys(activeProjectData.scenes);
-      if (remainingKeys.length > 0) {
-        if (activeProjectData.initialScene === activeSceneKey) {
-          activeProjectData.initialScene = remainingKeys[0];
-        }
-        rebuildInterfaceDropdowns();
-        switchActiveRoom(remainingKeys[0]);
-      } else {
-        activeProjectData.initialScene = "";
-        activeSceneKey = "";
-        currentPanoObj = null;
-        rebuildInterfaceDropdowns();
-        renderHotspotsManagementList();
-      }
-    }
-
-    // =========================================================================
-    // HOTSPOT PORTAL LOGIC
-    // =========================================================================
-    function addHotspotToRoom() {
-      if (!currentClickedVector || !activeSceneKey) return;
-
-      const targetScene = document.getElementById('target-scene-selector').value;
-      if (!targetScene) {
-        alert("Please select a target destination room.");
-        return;
-      }
-
-      const newHotspot = {
-        pitch: currentClickedVector.x,
-        yaw: currentClickedVector.y,
-        distance: currentClickedVector.z,
-        targetScene: targetScene
-      };
-
-      if (!activeProjectData.scenes[activeSceneKey].hotspots) {
-        activeProjectData.scenes[activeSceneKey].hotspots = [];
-      }
-
-      activeProjectData.scenes[activeSceneKey].hotspots.push(newHotspot);
-      renderActivePano();
-    }
-
-    function drawHotspotsToWorkspace() {
-      if (!currentPanoObj) return;
-
-      if (currentPanoObj.children) {
-        const existingSpots = currentPanoObj.children.filter(c => c instanceof PANOLENS.Infospot);
-        existingSpots.forEach(spot => currentPanoObj.remove(spot));
-      }
-
-      const sceneData = activeProjectData.scenes[activeSceneKey];
-      if (!sceneData || !sceneData.hotspots) return;
-
-      sceneData.hotspots.forEach((spot) => {
-        const infospot = new PANOLENS.Infospot(350, PANOLENS.DataImage.Arrow);
-        infospot.position.set(spot.pitch, spot.yaw, spot.distance);
-        infospot.addHoverText(`Portal to: ${spot.targetScene}`);
-
-        infospot.addEventListener('click', () => {
-          switchActiveRoom(spot.targetScene);
-        });
-
-        currentPanoObj.add(infospot);
-      });
-    }
-
-    function renderHotspotsManagementList() {
-      const listEl = document.getElementById('hotspots-list');
-      listEl.innerHTML = '';
-
-      const sceneData = activeProjectData.scenes[activeSceneKey];
-      if (!sceneData || !sceneData.hotspots || sceneData.hotspots.length === 0) {
-        listEl.innerHTML = '<li style="font-size:0.8rem; color:#666;">No portals in this room yet.</li>';
-        return;
-      }
-
-      sceneData.hotspots.forEach((spot, index) => {
-        const li = document.createElement('li');
-        li.className = 'hotspot-item';
-        li.innerHTML = `
-          <span>➔ <strong>${spot.targetScene}</strong></span>
-          <button class="danger" onclick="removeHotspotByIndex(${index})">Remove</button>
-        `;
-        listEl.appendChild(li);
-      });
-    }
-
-    function removeHotspotByIndex(index) {
-      if (!activeSceneKey || !activeProjectData.scenes[activeSceneKey]) return;
-      activeProjectData.scenes[activeSceneKey].hotspots.splice(index, 1);
-      renderActivePano();
-    }
-
-    // =========================================================================
-    // UI DROPDOWN HELPERS
-    // =========================================================================
-    function rebuildInterfaceDropdowns() {
-      const sceneSelect = document.getElementById('scene-selector');
-      const targetSelect = document.getElementById('target-scene-selector');
-
-      sceneSelect.innerHTML = '';
-      targetSelect.innerHTML = '';
-
-      const keys = Object.keys(activeProjectData.scenes);
-
-      keys.forEach(key => {
-        const isStart = (key === activeProjectData.initialScene) ? " ★(Start)" : "";
-        
-        const option1 = document.createElement('option');
-        option1.value = key;
-        option1.textContent = `${key}${isStart}`;
-        sceneSelect.appendChild(option1);
-
-        const option2 = document.createElement('option');
-        option2.value = key;
-        option2.textContent = key;
-        targetSelect.appendChild(option2);
-      });
-
-      if (activeSceneKey && keys.includes(activeSceneKey)) {
-        sceneSelect.value = activeSceneKey;
-      }
-    }
-
-    // =========================================================================
-    // CLOUD DATABASE FIRESTORE SYNC WITH FALLBACKS
-    // =========================================================================
-    async function loadProjectFromCloud() {
-      try {
-        showLoadingOverlay("Fetching tour data from Firestore...");
-        const docRef = db.collection('projects').doc(projectId);
-
-        let docSnap;
-        try {
-          docSnap = await docRef.get();
-        } catch (netErr) {
-          console.warn("Live network request failed. Attempting offline cache...", netErr);
-          try {
-            docSnap = await docRef.get({ source: 'cache' });
-          } catch (cacheErr) {
-            throw new Error("Could not connect to Firestore backend and no offline cache exists.");
-          }
-        }
-
-        if (docSnap && docSnap.exists) {
-          activeProjectData = docSnap.data();
-          rebuildInterfaceDropdowns();
-
-          if (activeProjectData.initialScene && activeProjectData.scenes[activeProjectData.initialScene]) {
-            await switchActiveRoom(activeProjectData.initialScene);
-          } else if (Object.keys(activeProjectData.scenes).length > 0) {
-            await switchActiveRoom(Object.keys(activeProjectData.scenes)[0]);
-          } else {
-            hideLoadingOverlay();
-          }
-        } else {
-          console.warn(`No existing project found for ID "${projectId}". Ready for new scenes.`);
-          hideLoadingOverlay();
-        }
-      } catch (err) {
-        console.error("Error loading project from Firestore:", err);
-        hideLoadingOverlay();
-        alert("Database Connection Warning:\n\n" + err.message + "\n\nYou can still work and add rooms, then click 'Save All Changes' once connected.");
-      }
-    }
-
-  async function saveProjectToCloud() {
-    const saveBtn = document.getElementById('cloud-save-btn');
-    saveBtn.disabled = true;
-    saveBtn.innerText = "Saving...";
-  
-    try {
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error("Save operation timed out (10s). Check network or Firestore Security Rules.")), 10000)
-      );
-  
-      const savePromise = db.collection('projects').doc(projectId).set(activeProjectData, { merge: true });
-  
-      await Promise.race([savePromise, timeoutPromise]);
-      alert("All project changes saved to Firebase Firestore!");
-    } catch (err) {
-      console.error("Firestore Save Error:", err);
-      alert("Save failed: " + err.message);
-    } finally {
-      saveBtn.disabled = false;
-      saveBtn.innerText = "Save All Changes";
-    }
-  }
+    window.addEventListener('DOMContentLoaded', initPanorama);
   </script>
 </body>
 </html>
