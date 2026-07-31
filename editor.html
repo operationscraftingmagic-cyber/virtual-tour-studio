@@ -543,63 +543,55 @@
       alert(`Room [${activeSceneKey}] set as initial starting scene.`);
     }
 
-  function captureDefaultViewpoint() {
-    if (!currentRoomId || !viewer) {
-      alert("Please select a room first.");
-      return;
-    }
-  
-    let target = null;
-  
-    // 1. Primary Method: Panolens native center raycaster
-    if (typeof viewer.getRaycastViewCenter === 'function') {
-      target = viewer.getRaycastViewCenter();
-    }
-  
-    // 2. Fallback Method: Three.js Camera World Direction
-    if (!target || isNaN(target.x)) {
-      if (viewer.getCamera && viewer.getCamera()) {
-        const camera = viewer.getCamera();
-        const dir = new THREE.Vector3();
-        camera.getWorldDirection(dir);
-        // Panolens default sphere radius is 5000 units
-        target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
-      }
-    }
-  
-    // 3. Fallback Method: Control Target
-    if (!target || isNaN(target.x)) {
-      if (viewer.getControl && viewer.getControl().target) {
-        target = viewer.getControl().target;
-      }
-    }
-  
-    // Final validation check
-    if (!target || isNaN(target.x)) {
-      alert("Could not detect camera direction. Try moving the room view slightly.");
-      return;
-    }
-  
-    // Round coordinates to clean integers
-    const newViewpoint = {
-      x: Math.round(target.x),
-      y: Math.round(target.y),
-      z: Math.round(target.z)
-    };
-  
-    // Save viewpoint to the current room
-    rooms[currentRoomId].defaultViewpoint = newViewpoint;
-  
-    // Display status feedback
-    const statusEl = document.getElementById("save-status");
-    if (statusEl) {
-      statusEl.textContent = `Saved default view: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`;
-      statusEl.style.color = "#4CAF50";
-      setTimeout(() => { statusEl.textContent = ""; }, 3000);
-    } else {
-      alert(`Viewpoint saved for ${rooms[currentRoomId].name}: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`);
+function captureDefaultViewpoint() {
+  if (!activeSceneKey || !activeProjectData.scenes[activeSceneKey]) {
+    alert("Please select a room first.");
+    return;
+  }
+
+  let target = null;
+
+  // 1. Primary Method: Panolens native center raycaster
+  if (typeof viewer.getRaycastViewCenter === 'function') {
+    target = viewer.getRaycastViewCenter();
+  }
+
+  // 2. Fallback Method: Three.js Camera World Direction
+  if (!target || isNaN(target.x)) {
+    if (viewer.getCamera && viewer.getCamera()) {
+      const camera = viewer.getCamera();
+      const dir = new THREE.Vector3();
+      camera.getWorldDirection(dir);
+      // Panolens default sphere radius is 5000 units
+      target = new THREE.Vector3(dir.x * 5000, dir.y * 5000, dir.z * 5000);
     }
   }
+
+  // 3. Fallback Method: Control Target
+  if (!target || isNaN(target.x)) {
+    if (viewer.getControl && viewer.getControl().target) {
+      target = viewer.getControl().target;
+    }
+  }
+
+  // Final validation check
+  if (!target || isNaN(target.x)) {
+    alert("Could not detect camera direction. Try moving the room view slightly.");
+    return;
+  }
+
+  // Round coordinates to clean integers
+  const newViewpoint = {
+    x: Math.round(target.x),
+    y: Math.round(target.y),
+    z: Math.round(target.z)
+  };
+
+  // Save initial camera view angle to active project data
+  activeProjectData.scenes[activeSceneKey].initialLook = newViewpoint;
+
+  alert(`Saved default view angle for [${activeSceneKey}]: (${newViewpoint.x}, ${newViewpoint.y}, ${newViewpoint.z})`);
+}
 
     function deleteActiveRoom() {
       if (!activeSceneKey) return;
